@@ -1,0 +1,8 @@
+build/*
+!build/yalama
+.git
+.gitignore
+.vscode
+*.deb
+*.py
+docker/local

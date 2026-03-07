@@ -1,0 +1,15 @@
+{
+    "model": "",
+    "logs":"",
+    "mode":0,
+    "showloadedweights" : false,
+    "port":"5067",
+    "debug": false,
+    "isTorchValidationsEnabled": false,
+    "isKVCacheEnabled": true,
+    "kvCacheSizeInGB": 2,
+    "isGreedy": true,
+    "topk": 40,
+    "temp": 0.6
+    
+}

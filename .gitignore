@@ -1,0 +1,36 @@
+# Build
+build/
+cmake-build*/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+
+# Binaries
+*.out
+*.o
+*.so
+*.a
+
+# Logs
+yalama_log.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# Docker
+*.tar
+*.deb
+
+# LibTorch (local)
+libtorch/
+
+# HF models
+*.safetensors
+
+# Local docker
+docker/local/
+
