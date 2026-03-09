@@ -22,7 +22,7 @@ Deterministic high-performance **LibTorch inference runtime** built entirely in 
 - Soft stop sequences
 - Deterministic execution
 - **OpenAI-compatible API service**
-- **REPL interactive mode**
+- **REPL interactive Mode**
 
 ## Tested Models
 
@@ -136,7 +136,7 @@ YALAMA supports two runtime modes.
 Runs the **OpenAI-compatible API server**.
 
 ```bash
---mode 1
+--serviceMode 1
 ```
 
 ### REPL Mode
@@ -144,7 +144,7 @@ Runs the **OpenAI-compatible API server**.
 Runs an **interactive terminal session**.
 
 ```bash
---mode 0
+--serviceMode 0
 ```
 
 ## CLI Arguments
@@ -156,7 +156,7 @@ Runs an **interactive terminal session**.
 | `--model`                     | **Required**. Path to HuggingFace SafeTensors model                         |
 | `--config`                    | Folder containing `yalama_config.json`                                      |
 | `--logs`                      | Log directory (used when debug is enabled). Default: current folder         |
-| `--mode`                      | `1 = Service`, `0 = REPL`                                                   |
+| `--serviceMode`               | `1 = Service`, `0 = REPL`                                                   |
 | `--httpThreadsPoolSize`       | `valid values from 4 to 64, only used in services mode`                     |
 | `--port`                      | Service port (default `5067`)                                               |
 | `--isServiceLoggingEnabled`   | Prints logging messages on terminal for services (default `false`)          |
@@ -168,6 +168,9 @@ Runs an **interactive terminal session**.
 | `--topk`                      | `2–40`, default `40`. Ignored if greedy is enabled                          |
 | `--temp`                      | `0.05–0.7`, default `0.6`. Ignored if greedy is enabled                     |
 | `--showloadedweights`         | `1 = enable`, `0 = disable`. Shows weight names during loading              |
+
+**NOTE: logs arg is path of the folder where the log file is written, the log file is huge and logs tensors in each step in each layer, and have a high performance
+impace.**
 
 ## Config System
 
@@ -189,17 +192,19 @@ Important:
 ```json
 {
   "model": "~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct",
-  "logs": "",
-  "mode": true,
+  "logs":"~/yalama_logs",
+  "serviceMode":1,
   "httpThreadsPoolSize":32,
+  "showloadedweights" : false,
+  "port":"5067",
   "debug": false,
+  "isServiceLoggingEnabled": false,
   "isTorchValidationsEnabled": false,
   "isKVCacheEnabled": true,
   "kvCacheSizeInGB": 2,
-  "isGreedy": true,
+  "isGreedy": false,
   "topk": 40,
-  "temp": 0.6,
-  "showloadedweights": false
+  "temp": 0.6
 }
 ```
 
@@ -210,17 +215,22 @@ Missing fields fall back to defaults.
 
 If no configuration is provided, the following defaults are used:
 
-| Setting                     | Default Value | Notes                           |
-|-----------------------------|---------------|---------------------------------|
-| `debug`                     | `false`       | Debug logging disabled          |
-| `isTorchValidationsEnabled` | `false`       | Torch validation disabled       |
-| `isKVCacheEnabled`          | `true`        | KV cache enabled                |
-| `kvCacheSizeInGB`           | `2`           | Minimum allowed: 1GB            |
-| `isGreedy`                  | `true`        | Greedy decoding enabled         |
-| `topk`                      | `40`          | Ignored if greedy enabled       |
-| `temp`                      | `0.6`         | Ignored if greedy enabled       |
-| `ServicePort`               | `5067`        | API server port                 |
-| `LogsPath`                  | `./`          | Current directory               |
+| Setting                     | Default Value | Notes                                                                             |
+|-----------------------------|---------------|-----------------------------------------------------------------------------------|
+| `debug`                     | `false`       | Debug logging disabled                                                            |
+| `logs`                      | `./`          | Current directory, only active when debug is true                                 |
+| `serviceMode`               | `true`        | OpenAI Compatible Service                                                         |
+| `httpThreadsPoolSize`       | `32`          | Service Thread Pool size (ignored in REPL mode)                                   |
+| `showloadedweights`         | `false`       | Show the names of loaded weights while loading                                    |
+| `port`                      | `5067`        | OpenAI Compatible Service server port (ignored in REPL mode)                      |
+| `isServiceLoggingEnabled`   | `false`       | print logs on terminal for service operations                                     |
+|                             |               | status codes(i.e incoming request and response)                                   |
+| `isTorchValidationsEnabled` | `false`       | Torch validations disabled                                                        |
+| `isKVCacheEnabled`          | `true`        | KV cache enabled                                                                  |
+| `kvCacheSizeInGB`           | `2`           | Minimum allowed: 1GB                                                              |
+| `isGreedy`                  | `true`        | Greedy decoding enabled                                                           |
+| `topk`                      | `40`          | Ignored if greedy enabled                                                         |
+| `temp`                      | `0.6`         | Ignored if greedy enabled                                                         |
 
 ## Docker
 
@@ -280,7 +290,7 @@ docker run -it --gpus all \
 -v ~/yalama_logs:/logs \
 yalama:linux \
 --model /model \
---mode 1 \
+--serviceMode 1 \
 --port 8080 \
 --httpThreadsPoolSize 32 \
 --config /config \
@@ -303,7 +313,7 @@ Container supports the **same CLI arguments as native execution**.
 ```bash
 docker run -it --gpus all \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/models \
-yalama:linux --model /models --mode 0
+yalama:linux --model /models --serviceMode 0
 ```
 
 ## Native Execution
@@ -317,7 +327,7 @@ yalama:linux --model /models --mode 0
 ### REPL Mode (Native)
 
 ```bash
-./build/yalama --model <path_to_model> --mode 0
+./build/yalama --model <path_to_model> --serviceMode 0
 ```
 
 ## OpenAI-Compatible Service API

@@ -1,7 +1,7 @@
 {
     "model": "",
     "logs":"",
-    "mode":1,
+    "serviceMode":1,
     "httpThreadsPoolSize":32,
     "showloadedweights" : false,
     "port":"5067",

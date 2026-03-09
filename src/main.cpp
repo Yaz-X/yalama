@@ -65,11 +65,11 @@ std::string ParseArgs(int argsCount, char **args)
 
             i++;
         }
-        else if (arg == "--mode" && i + 1 < argsCount)
+        else if (arg == "--serviceMode" && i + 1 < argsCount)
         {
             std::string value = Trim(args[i + 1]);
             std::ostringstream loadedMsg;
-            loadedMsg << "Service run mode supplied: " << value << std::endl;
+            loadedMsg << "Service run serviceMode supplied: " << value << std::endl;
 
             if (value == "0")
             {
@@ -82,7 +82,7 @@ std::string ParseArgs(int argsCount, char **args)
                 std::cout << loadedMsg.str();
             }
             else
-                std::cout << "invalid value supplied for --mode arg, will use default value 0 as services mode" << std::endl;
+                std::cout << "invalid value supplied for --serviceMode arg, will use default value 0 as services serviceMode" << std::endl;
 
             i++;
         }
@@ -401,7 +401,7 @@ int main(int argsCount, char **args)
 
     std::string modeString = ConfigManager::IsServicesRunMode.value() ? "OpenAI Compatible Services" : "REPL";
 
-    std::cout << "Mode is set to " << modeString << ", you can set the mode by passing --mode 0 for services and --mode 1 for REPL, or in yalama_config file, Default is Services if the arg is not supplied" << std::endl;
+    std::cout << "Mode is set to " << modeString << ", you can set the serviceMode by passing --serviceMode 0 for services and --serviceMode 1 for REPL, or in yalama_config file, Default is Services if the arg is not supplied" << std::endl;
 
     std::cout << R"(
 

@@ -69,7 +69,7 @@ void ConfigManager::Load(std::string configFolderPath)
 
                 if (!IsServicesRunMode.has_value())
                 {
-                    key = "mode";
+                    key = "serviceMode";
                     if (jsonDeserializer.contains(key))
                     {
                         IsServicesRunMode = jsonDeserializer.at(key).get<bool>();
