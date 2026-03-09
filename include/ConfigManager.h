@@ -38,6 +38,7 @@ public:
     inline static std::optional<bool> IsKVCacheEnabled;
     inline static std::optional<bool> IsGreedy;
     inline static std::optional<bool> IsTorchChecksEnabled;
+    inline static std::optional<bool> IsServiceLoggingEnabled;    
     inline static int KVCacheSizeInGB = 0;    
     inline static int TopK = 0;
     inline static float Temp = 0;

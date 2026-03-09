@@ -159,6 +159,7 @@ Runs an **interactive terminal session**.
 | `--mode`                      | `1 = Service`, `0 = REPL`                                                   |
 | `--httpThreadsPoolSize`       | `valid values from 4 to 64, only used in services mode`                     |
 | `--port`                      | Service port (default `5067`)                                               |
+| `--isServiceLoggingEnabled`   | Prints logging messages on terminal for services (default `false`)          |
 | `--debug`                     |  `1 = enable`, `0 = disable`. Logs tensors per layer (performance impact)   |
 | `--istorchvalidationsenabled` | `1 = enable`, `0 = disable`. Enables internal torch validations             |
 | `--iskvcacheenabled`          | `1 = enable`, `0 = disable`. Default enabled                                |
@@ -238,8 +239,8 @@ Run:
 ```bash
 docker run -it --gpus all \
 -p 5067:5067 \
--v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/models \
-ghcr.io/yaz/yalama:latest --model /models
+-v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/model \
+ghcr.io/yaz-x/yalama:latest /app/yalama --model /model
 ```
 
 or you can build images from source described in the next section as YALAMA provides Dockerfiles for both **native Linux** and **WSL environments**.
@@ -249,7 +250,7 @@ or you can build images from source described in the next section as YALAMA prov
 #### WSL / Linux
 
 ```bash
-docker build --rm -f docker/build/Dockerfile -t yalama .
+docker build --no-cache --rm -f docker/build/Dockerfile -t yalama .
 
 docker image prune -f
 ```
@@ -281,10 +282,12 @@ yalama:linux \
 --model /model \
 --mode 1 \
 --port 8080 \
+--httpThreadsPoolSize 32 \
 --config /config \
 --logs /logs \
 --debug 0 \
 --istorchvalidationsenabled 0 \
+--isServiceLoggingEnabled 0 \
 --iskvcacheenabled 1 \
 --kvcachesizeingb 2 \
 --isgreedy 1 \

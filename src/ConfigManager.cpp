@@ -149,6 +149,21 @@ void ConfigManager::Load(std::string configFolderPath)
                     }
                 }
 
+                if (!IsServiceLoggingEnabled.has_value())
+                {
+                    key = "isServiceLoggingEnabled";
+                    if (jsonDeserializer.contains(key))
+                    {
+                        IsServiceLoggingEnabled = jsonDeserializer.at(key).get<bool>();
+                        PrintPropertyLoaded(key, std::to_string(IsServiceLoggingEnabled.value()));
+                    }
+                    else
+                    {
+                        IsServiceLoggingEnabled = false;
+                        PrintPropertyNotFound(key, "false");
+                    }
+                }
+
                 if (!IsKVCacheEnabled.has_value())
                 {
                     key = "isKVCacheEnabled";
@@ -312,6 +327,9 @@ void ConfigManager::Load(std::string configFolderPath)
 
         if (!IsTorchChecksEnabled.has_value())
             IsTorchChecksEnabled = false;
+
+        if (!IsServiceLoggingEnabled.has_value())
+            IsServiceLoggingEnabled = false;
 
         if (TopK == 0)
             TopK = 40;

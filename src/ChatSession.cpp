@@ -93,7 +93,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
     hr_clock::time_point endTime;
     int64_t nextID;
 
-    if (ConfigManager::IsServicesRunMode.value())
+    if (ConfigManager::IsServicesRunMode.value() && ConfigManager::IsServiceLoggingEnabled.value())
         std::cout << "[HTTP] Thread " << std::this_thread::get_id() << " waiting for GPU inference..." << std::endl;
 
     auto waitStart = std::chrono::steady_clock::now();
@@ -108,7 +108,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
 
     std::unique_lock<std::timed_mutex> lock(inferMutex, std::adopt_lock);
 
-    if (ConfigManager::IsServicesRunMode.value())
+    if (ConfigManager::IsServicesRunMode.value() && ConfigManager::IsServiceLoggingEnabled.value())
     {
         auto waitEnd = std::chrono::steady_clock::now();
 

@@ -92,8 +92,8 @@ std::string ParseArgs(int argsCount, char **args)
             {
                 ConfigManager::HttpThreadsPoolSize = std::stoi(Trim(args[i + 1]));
 
-                if (ConfigManager::HttpThreadsPoolSize > 64 || ConfigManager::HttpThreadsPoolSize < 4)                                  
-                    std::cout << "invalid value for --httpThreadsPoolSize, must be between 4-64, will use default value: 32"  << std::endl;                
+                if (ConfigManager::HttpThreadsPoolSize > 64 || ConfigManager::HttpThreadsPoolSize < 4)
+                    std::cout << "invalid value for --httpThreadsPoolSize, must be between 4-64, will use default value: 32" << std::endl;
                 else
                     std::cout << "httpThreadsPoolSize supplied: " << Trim(args[i + 1]) << std::endl;
             }
@@ -175,6 +175,35 @@ std::string ParseArgs(int argsCount, char **args)
 
             i++;
         }
+        else if (arg == "--isserviceloggingenabled" && i + 1 < argsCount)
+        {
+            try
+            {
+                std::string value = Trim(args[i + 1]);
+                std::ostringstream loadedMsg;
+                loadedMsg << "isServiceLoggingEnabled supplied: " << value << std::endl;
+
+                if (value == "1")
+                {
+                    ConfigManager::IsServiceLoggingEnabled = true;
+                    std::cout << loadedMsg.str();
+                }
+                else if (value == "0")
+                {
+                    ConfigManager::IsServiceLoggingEnabled = false;
+                    std::cout << loadedMsg.str();
+                }
+                else
+                    std::cout << "invalid value supplied for --isServiceLoggingEnabled arg, will use default as 0 (false)" << std::endl;
+            }
+            catch (...)
+            {
+                std::cout << "Invalid value supplied for arg --isServiceLoggingEnabled, will use default as 0 (false)" << std::endl;
+            }
+
+            i++;
+        }
+
         else if (arg == "--iskvcacheenabled" && i + 1 < argsCount)
         {
             try
@@ -347,7 +376,7 @@ int main(int argsCount, char **args)
     std::cout << "Model Path: " << ConfigManager::ModelPath << std::endl;
     std::cout << "Logs Path: " << (ConfigManager::LogsPath.empty() ? "." : ConfigManager::LogsPath) << std::endl;
     std::cout << "Run Mode: " << (ConfigManager::IsServicesRunMode.value() ? "Services" : "REPL") << std::endl;
-    std::cout << "HTTP Thread Pool Size: " << ConfigManager::HttpThreadsPoolSize << std::endl;    
+    std::cout << "HTTP Thread Pool Size: " << ConfigManager::HttpThreadsPoolSize << std::endl;
     std::cout << "Service Port: " << ConfigManager::ServicePort << std::endl;
     std::cout << "Debug: " << (ConfigManager::IsDebuggingEnabled.value() ? "true" : "false") << std::endl;
     std::cout << "Torch Validations: " << (ConfigManager::IsTorchChecksEnabled.value() ? "true" : "false") << std::endl;

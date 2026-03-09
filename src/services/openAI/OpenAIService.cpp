@@ -11,7 +11,9 @@ void OpenAIService::Start(int port)
 
     _httpServer.new_task_queue = []
     { return new httplib::ThreadPool(ConfigManager::HttpThreadsPoolSize); };
+    
     _httpServer.listen("0.0.0.0", port);
+
     std::cout << "OpenAI Compatible Service is running at http://localhost:" << std::to_string(port) << std::endl
               << std::flush;
 }
@@ -25,16 +27,18 @@ void OpenAIService::Shutdown()
 
 void OpenAIService::HandleHealth(const httplib::Request &request, httplib::Response &response)
 {
-    std::cout << "[HTTP] Request received: Get /health" << std::endl
-              << std::flush;
+    if (ConfigManager::IsServiceLoggingEnabled.value())
+        std::cout << "[HTTP] Request received: Get /health" << std::endl
+                  << std::flush;
 
     response.set_content("OK", "text/plain");
 }
 
 void OpenAIService::HandleModel(const httplib::Request &request, httplib::Response &response)
 {
-    std::cout << "[HTTP] Request received: Get /model" << std::endl
-              << std::flush;
+    if (ConfigManager::IsServiceLoggingEnabled.value())
+        std::cout << "[HTTP] Request received: Get /model" << std::endl
+                  << std::flush;
 
     response.set_content(ConfigManager::ModelPath, "text/plain");
 }
@@ -42,8 +46,9 @@ void OpenAIService::HandleModel(const httplib::Request &request, httplib::Respon
 void OpenAIService::HandleCompletion(const httplib::Request &request, httplib::Response &response)
 {
 
-    std::cout << "[HTTP] Request received: POST /v1/chat/completions" << std::endl
-              << std::flush;
+    if (ConfigManager::IsServiceLoggingEnabled.value())
+        std::cout << "[HTTP] Request received: POST /v1/chat/completions" << std::endl
+                  << std::flush;
 
     std::string requestBody = request.body;
     nlohmann::json requestJson;
@@ -100,7 +105,7 @@ void OpenAIService::HandleCompletion(const httplib::Request &request, httplib::R
                                     "data: " + chunk.dump() + "\n\n";
 
                                 if (!sink.is_writable())
-                                {                                    
+                                {
                                     clientDisconnected = true;
                                     return;
                                 }
@@ -183,10 +188,11 @@ void OpenAIService::HandleCompletion(const httplib::Request &request, httplib::R
         response.set_content(error.dump(), "application/json");
     }
 
-    std::cout << "[HTTP] Completed with status: "
-              << response.status
-              << std::endl
-              << std::flush;
+    if (ConfigManager::IsServiceLoggingEnabled.value())
+        std::cout << "[HTTP] Completed with status: "
+                  << response.status
+                  << std::endl
+                  << std::flush;
 }
 
 nlohmann::json OpenAIService::FormatError(GenerationResult genResults)
