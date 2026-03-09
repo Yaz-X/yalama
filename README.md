@@ -241,7 +241,7 @@ You can run YALAMA without building the image.
 Pull the ready runtime image:
 
 ```bash
-docker pull ghcr.io/yaz/yalama:latest
+docker pull ghcr.io/yaz-x/yalama:latest
 ```
 
 Run:
