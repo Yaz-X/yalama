@@ -4,5 +4,6 @@ enum class GenerationError
     SequenceLengthExceeded,
     KVCacheExceeded,
     InvalidPrompt,
-    Canceled
+    Canceled,
+    GPUQueueTimedOut
 };

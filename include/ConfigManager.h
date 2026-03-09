@@ -42,8 +42,9 @@ public:
     inline static int TopK = 0;
     inline static float Temp = 0;
     inline static int MaxGeneratedTokensPerNonInstruct = 500;
+    inline static int HttpThreadsPoolSize  = 0;
+    inline static int HttpMaxQueueWaitSeconds  = 60;        
     
-
 private:
     inline static bool _isLoaded = false;
     static void Validate();

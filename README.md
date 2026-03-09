@@ -157,6 +157,7 @@ Runs an **interactive terminal session**.
 | `--config`                    | Folder containing `yalama_config.json`                                      |
 | `--logs`                      | Log directory (used when debug is enabled). Default: current folder         |
 | `--mode`                      | `1 = Service`, `0 = REPL`                                                   |
+| `--httpThreadsPoolSize`       | `valid values from 4 to 64, only used in services mode`                     |
 | `--port`                      | Service port (default `5067`)                                               |
 | `--debug`                     |  `1 = enable`, `0 = disable`. Logs tensors per layer (performance impact)   |
 | `--istorchvalidationsenabled` | `1 = enable`, `0 = disable`. Enables internal torch validations             |
@@ -189,6 +190,7 @@ Important:
   "model": "~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct",
   "logs": "",
   "mode": true,
+  "httpThreadsPoolSize":32,
   "debug": false,
   "isTorchValidationsEnabled": false,
   "isKVCacheEnabled": true,
@@ -228,7 +230,7 @@ You can run YALAMA without building the image.
 Pull the ready runtime image:
 
 ```bash
-docker pull ghcr.io/yaz/yalama:linux
+docker pull ghcr.io/yaz/yalama:latest
 ```
 
 Run:
@@ -237,23 +239,19 @@ Run:
 docker run -it --gpus all \
 -p 5067:5067 \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/models \
-ghcr.io/yaz/yalama:linux --model /models
+ghcr.io/yaz/yalama:latest --model /models
 ```
 
 or you can build images from source described in the next section as YALAMA provides Dockerfiles for both **native Linux** and **WSL environments**.
 
 ### Build Image
 
-#### Linux
+#### WSL / Linux
 
 ```bash
-docker build -f docker/build-linux/Dockerfile.linux -t yalama:linux .
-```
+docker build --rm -f docker/build/Dockerfile -t yalama .
 
-#### WSL
-
-```bash
-docker build -f docker/build-wsl/Dockerfile.wsl -t yalama:wsl .
+docker image prune -f
 ```
 
 ---
@@ -266,7 +264,7 @@ docker build -f docker/build-wsl/Dockerfile.wsl -t yalama:wsl .
 docker run -it --gpus all \
 -p 5067:5067 \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/model \
-yalama:linux --model /model
+yalama:latest /app/yalama --model /model
 ```
 
 ---

@@ -9,7 +9,7 @@ class ChatSession
 {
 public:
     ChatSession();
-    GenerationResult Generate(std::string &openaiJson, std::function<void(const std::string &)> onTokenDecoded, bool isCancel = false);
+    GenerationResult Generate(std::string &openaiJson, std::function<void(const std::string &)> onTokenDecoded, bool &isCancel);
 
 private:
     static std::shared_ptr<Model> _sharedModel;

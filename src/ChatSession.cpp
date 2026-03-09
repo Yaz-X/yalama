@@ -10,11 +10,13 @@
 #include "ConfigManager.h"
 #include "TraceLogger.h"
 #include "ChatTemplateProvider.h"
+#include <iomanip>
 #include <string>
 #include <torch/torch.h>
 
 using hr_clock = std::chrono::high_resolution_clock;
 
+static std::timed_mutex inferMutex;
 std::shared_ptr<Model> ChatSession::_sharedModel = nullptr;
 std::once_flag ChatSession::_modelInitFlag;
 std::regex ChatSession::_NewLineRegex = std::regex("Ċ");
@@ -72,13 +74,10 @@ ChatSession::ChatSession()
         std::unique(_MaskedTokenIds.begin(), _MaskedTokenIds.end()),
         _MaskedTokenIds.end());
 
-    std::cout << "Masked Size: " << _MaskedTokenIds.size() << std::endl
-              << std::flush;
-
     return;
 }
 
-GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<void(const std::string &)> onTokenDecoded, bool isCancel)
+GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<void(const std::string &)> onTokenDecoded, bool &isCancel)
 {
     int emittedTokens = 0;
     int generatedTokens = 0;
@@ -93,6 +92,32 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
     hr_clock::time_point startTime;
     hr_clock::time_point endTime;
     int64_t nextID;
+
+    if (ConfigManager::IsServicesRunMode.value())
+        std::cout << "[HTTP] Thread " << std::this_thread::get_id() << " waiting for GPU inference..." << std::endl;
+
+    auto waitStart = std::chrono::steady_clock::now();
+
+    if (!inferMutex.try_lock_for(std::chrono::seconds(ConfigManager::HttpMaxQueueWaitSeconds)))
+    {
+        generationResult.IsSuccess = false;
+        generationResult.Error = GenerationError::GPUQueueTimedOut;
+
+        return generationResult;
+    }
+
+    std::unique_lock<std::timed_mutex> lock(inferMutex, std::adopt_lock);
+
+    if (ConfigManager::IsServicesRunMode.value())
+    {
+        auto waitEnd = std::chrono::steady_clock::now();
+
+        double waitSeconds =
+            std::chrono::duration<double>(waitEnd - waitStart).count();
+
+        std::cout << "[HTTP] Thread " << std::this_thread::get_id() << " acquired GPU for inference after "
+                  << std::fixed << std::setprecision(6) << waitSeconds << " seconds..." << std::endl;
+    }
 
     generationResult.IsSuccess = FormatInput(openaiJson);
 
@@ -245,6 +270,8 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                     std::cout << "Max Sequence Length Exceeded, Make sure your prompt is less or equal to model max sequence length" << std::endl;
                 else if (generationResult.Error == GenerationError::Canceled)
                     std::cout << "Generation Canceled by the user" << std::endl;
+                else if (generationResult.Error == GenerationError::GPUQueueTimedOut)
+                    std::cout << "Failed to acquire a GPU within the waiting time of: " << ConfigManager::HttpMaxQueueWaitSeconds << std::endl;
             }
         }
     }

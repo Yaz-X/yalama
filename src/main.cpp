@@ -86,6 +86,25 @@ std::string ParseArgs(int argsCount, char **args)
 
             i++;
         }
+        else if (arg == "--httpThreadsPoolSize" && i + 1 < argsCount)
+        {
+            try
+            {
+                ConfigManager::HttpThreadsPoolSize = std::stoi(Trim(args[i + 1]));
+
+                if (ConfigManager::HttpThreadsPoolSize > 64 || ConfigManager::HttpThreadsPoolSize < 4)                                  
+                    std::cout << "invalid value for --httpThreadsPoolSize, must be between 4-64, will use default value: 32"  << std::endl;                
+                else
+                    std::cout << "httpThreadsPoolSize supplied: " << Trim(args[i + 1]) << std::endl;
+            }
+            catch (...)
+            {
+                std::cout << "Invalid Services port supplied for arg --port, will use default port 5067" << std::endl;
+            }
+
+            i++;
+        }
+
         else if (arg == "--port" && i + 1 < argsCount)
         {
             try
@@ -301,7 +320,7 @@ std::string ParseArgs(int argsCount, char **args)
 void TermSignalHandler()
 {
     _IsInterrupted = true;
-    
+
     close(STDIN_FILENO);
 
     if (ConfigManager::IsServicesRunMode.value())
@@ -328,6 +347,7 @@ int main(int argsCount, char **args)
     std::cout << "Model Path: " << ConfigManager::ModelPath << std::endl;
     std::cout << "Logs Path: " << (ConfigManager::LogsPath.empty() ? "." : ConfigManager::LogsPath) << std::endl;
     std::cout << "Run Mode: " << (ConfigManager::IsServicesRunMode.value() ? "Services" : "REPL") << std::endl;
+    std::cout << "HTTP Thread Pool Size: " << ConfigManager::HttpThreadsPoolSize << std::endl;    
     std::cout << "Service Port: " << ConfigManager::ServicePort << std::endl;
     std::cout << "Debug: " << (ConfigManager::IsDebuggingEnabled.value() ? "true" : "false") << std::endl;
     std::cout << "Torch Validations: " << (ConfigManager::IsTorchChecksEnabled.value() ? "true" : "false") << std::endl;
@@ -399,11 +419,12 @@ int main(int argsCount, char **args)
 
                 if (_IsInterrupted || !std::cin || input == "exit")
                 {
-                    end = true;                    
+                    end = true;
                 }
                 else if (!input.empty())
                 {
 
+                    bool isCancel = false;
                     messages.push_back({{"role", "user"}, {"content", input}});
 
                     nlohmann::json request;
@@ -414,7 +435,7 @@ int main(int argsCount, char **args)
                     session.Generate(requestStr, [&](const std::string &token)
                                      { 
                             assistantResponse += token;
-                            std::cout << token << std::flush; });
+                            std::cout << token << std::flush; }, isCancel);
 
                     std::cout << std::endl;
                 }

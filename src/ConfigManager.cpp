@@ -82,6 +82,28 @@ void ConfigManager::Load(std::string configFolderPath)
                     }
                 }
 
+                if (HttpThreadsPoolSize == 0)
+                {
+                    key = "httpThreadsPoolSize";
+                    if (jsonDeserializer.contains(key))
+                    {
+                        HttpThreadsPoolSize = jsonDeserializer.at(key).get<int>();
+
+                        if (HttpThreadsPoolSize < 4 || HttpThreadsPoolSize > 64)
+                        {
+                            HttpThreadsPoolSize = 32;
+                            std::cout << "property httpThreadsPoolSize should be between 4-64, it will be set to 32" << std::endl;
+                        }
+                        else
+                            PrintPropertyLoaded(key, std::to_string(HttpThreadsPoolSize));
+                    }
+                    else
+                    {
+                        HttpThreadsPoolSize = 32;
+                        PrintPropertyNotFound(key, "32");
+                    }
+                }
+
                 if (!IsShowLoadedWeights.has_value())
                 {
                     key = "showloadedweights";
@@ -237,7 +259,7 @@ void ConfigManager::Load(std::string configFolderPath)
         else
             ModelPath = ResolvePath(ModelPath);
 
-        //Resolved ModelPath from refs and find safetensors
+        // Resolved ModelPath from refs and find safetensors
         std::filesystem::path repoRoot = ModelPath;
         std::filesystem::path refFile = repoRoot / "refs" / "main";
 
@@ -270,6 +292,12 @@ void ConfigManager::Load(std::string configFolderPath)
         if (!IsServicesRunMode.has_value())
             IsServicesRunMode = true;
 
+        if (HttpThreadsPoolSize < 4 || HttpThreadsPoolSize > 64)
+            HttpThreadsPoolSize = 32;
+
+        if (KVCacheSizeInGB < 1)
+            KVCacheSizeInGB = 2;
+
         if (!IsShowLoadedWeights.has_value())
             IsShowLoadedWeights = false;
 
@@ -284,9 +312,6 @@ void ConfigManager::Load(std::string configFolderPath)
 
         if (!IsTorchChecksEnabled.has_value())
             IsTorchChecksEnabled = false;
-
-        if (KVCacheSizeInGB == 0)
-            KVCacheSizeInGB = 2;
 
         if (TopK == 0)
             TopK = 40;

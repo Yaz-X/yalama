@@ -9,6 +9,8 @@ void OpenAIService::Start(int port)
     _httpServer.Get("/model", HandleModel);
     _httpServer.Post("/v1/chat/completions", HandleCompletion);
 
+    _httpServer.new_task_queue = []
+    { return new httplib::ThreadPool(ConfigManager::HttpThreadsPoolSize); };
     _httpServer.listen("0.0.0.0", port);
     std::cout << "OpenAI Compatible Service is running at http://localhost:" << std::to_string(port) << std::endl
               << std::flush;
@@ -76,7 +78,7 @@ void OpenAIService::HandleCompletion(const httplib::Request &request, httplib::R
                 "text/event-stream",
                 [request](size_t, httplib::DataSink &sink)
                 {
-                    std::atomic<bool> clientDisconnected = false;
+                    bool clientDisconnected = false;
                     ChatSession session;
                     std::string requestBody = request.body;
 
@@ -97,13 +99,16 @@ void OpenAIService::HandleCompletion(const httplib::Request &request, httplib::R
                                 std::string payload =
                                     "data: " + chunk.dump() + "\n\n";
 
-                                if (!sink.write(payload.c_str(), payload.size()))
-                                {
+                                if (!sink.is_writable())
+                                {                                    
                                     clientDisconnected = true;
                                     return;
                                 }
+
+                                sink.write(payload.c_str(), payload.size());
                             }
-                        }, clientDisconnected);
+                        },
+                        clientDisconnected);
 
                     if (!genResults.IsSuccess)
                     {
@@ -137,9 +142,10 @@ void OpenAIService::HandleCompletion(const httplib::Request &request, httplib::R
         }
         else
         {
+            bool isCancel = false;
             ChatSession session;
             auto genResult = session.Generate(requestBody, [&](const std::string &token)
-                                              { nonStreamingAssistantOutput += token; });
+                                              { nonStreamingAssistantOutput += token; }, isCancel);
 
             nlohmann::json reply;
 
@@ -199,6 +205,14 @@ nlohmann::json OpenAIService::FormatError(GenerationResult genResults)
         error["error"] = {
             {"message", "Max Sequence Length Exceeded, Make sure your prompt is less or equal to model max sequence length"},
             {"type", "invalid_seq_length_error"}};
+    else if (genResults.Error == GenerationError::Canceled)
+        error["error"] = {
+            {"message", "Canceled by connection reset or user"},
+            {"type", "connection_reset_error"}};
+    else if (genResults.Error == GenerationError::GPUQueueTimedOut)
+        error["error"] = {
+            {"message", "Failed to acquire a GPU within the waiting time (seconds) of " + ConfigManager::HttpMaxQueueWaitSeconds},
+            {"type", "gpu_queue_timed_out_error"}};
 
     return error;
 }
