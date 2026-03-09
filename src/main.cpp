@@ -16,6 +16,8 @@
 #include <sstream>
 #include "Tokenizer.h"
 
+static std::atomic<bool> _IsInterrupted = false;
+
 std::string ParseArgs(int argsCount, char **args)
 {
     std::cout << "Reading Args...." << std::endl;
@@ -295,19 +297,19 @@ std::string ParseArgs(int argsCount, char **args)
 
     return configFolderPath;
 }
+
+void TermSignalHandler()
+{
+    _IsInterrupted = true;
+    
+    close(STDIN_FILENO);
+
+    if (ConfigManager::IsServicesRunMode.value())
+        OpenAIService::Shutdown();
+}
+
 int main(int argsCount, char **args)
 {
-   // ParseArgs(argsCount, args);
-   // ConfigManager::Load("");
-   // Tokenizer::Init();
-   // std::string m = "مرحبا";
-   // auto ids = Tokenizer::EncodeWithoutChatTemplate(m);
-//
-   // for (auto id : ids)
-   //     std::cout << id << " ";
-//
-   // return 0;
-
     std::string modelArgMissing = R"(Missing required Model HF SafeTensors Path argument or path for --model <Path> doesnt exist. Use --model <path>, if using default HF download location then it will be 
         ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct/snapshots/[SNAP_SHOT_HASH])";
 
@@ -363,10 +365,14 @@ int main(int argsCount, char **args)
 
 )" << std::endl;
 
+    std::signal(SIGTERM, [](int)
+                { TermSignalHandler(); });
+
+    std::signal(SIGINT, [](int)
+                { TermSignalHandler(); });
+
     if (ConfigManager::IsServicesRunMode.value())
     {
-        std::signal(SIGTERM, [](int)
-                    { OpenAIService::Shutdown(); });
 
         OpenAIService::Start(ConfigManager::ServicePort);
 
@@ -376,10 +382,11 @@ int main(int argsCount, char **args)
     else
     {
 
+        bool end = false;
+
         if (isatty(fileno(stdin)))
         {
-
-            while (true)
+            while (!end)
             {
                 if (!assistantResponse.empty())
                     messages.push_back({{"role", "assistant"}, {"content", assistantResponse}});
@@ -390,15 +397,9 @@ int main(int argsCount, char **args)
                 std::cout << "\nPrompt>> ";
                 std::getline(std::cin, input);
 
-                bool shouldExit = false;
-
-                if (!std::cin)
+                if (_IsInterrupted || !std::cin || input == "exit")
                 {
-                    shouldExit = true;
-                }
-                else if (input == "exit")
-                {
-                    shouldExit = true;
+                    end = true;                    
                 }
                 else if (!input.empty())
                 {

@@ -23,7 +23,7 @@ def model():
 def valid_chat():
     payload = {
         "messages": [
-            {"role": "user", "content": "Explain gravity in one sentence."}
+            {"role": "user", "content": "إشرحلي الجاذبية"}
         ]
     }
 

@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     build-essential \
     gcc-12 g++-12 \
     cmake \

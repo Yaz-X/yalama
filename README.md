@@ -42,8 +42,9 @@ KV Cache enabled, CUDA Graph disabled.
 
 |      Decoding      |     Throughput    |
 |--------------------|-------------------|
-| Greedy             | ~55–60 tokens/sec |
-| TopK + Temperature | ~40–45 tokens/sec |
+| No Sampling        | ~75–80 tokens/sec |
+| Greedy             | ~55–65 tokens/sec |
+| TopK + Temperature | ~50–60 tokens/sec |
 
 ## Model Format
 
@@ -233,7 +234,7 @@ docker pull ghcr.io/yaz/yalama:linux
 Run:
 
 ```bash
-docker run --gpus all \
+docker run -it --gpus all \
 -p 5067:5067 \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/models \
 ghcr.io/yaz/yalama:linux --model /models
@@ -262,7 +263,7 @@ docker build -f docker/build-wsl/Dockerfile.wsl -t yalama:wsl .
 ### Minimal Run (OpenAI-compatible Service)
 
 ```bash
-docker run --gpus all \
+docker run -it --gpus all \
 -p 5067:5067 \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/model \
 yalama:linux --model /model
@@ -273,7 +274,7 @@ yalama:linux --model /model
 ### Full Run (Config + Logs + Custom Port)
 
 ```bash
-docker run --gpus all \
+docker run -it --gpus all \
 -p 8080:8080 \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/model \
 -v ~/yalama_config:/config \

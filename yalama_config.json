@@ -8,7 +8,7 @@
     "isTorchValidationsEnabled": false,
     "isKVCacheEnabled": true,
     "kvCacheSizeInGB": 2,
-    "isGreedy": true,
+    "isGreedy": false,
     "topk": 40,
     "temp": 0.6
     

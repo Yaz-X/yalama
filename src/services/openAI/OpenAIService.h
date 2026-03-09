@@ -1,5 +1,6 @@
 #pragma once
 
+#define CPPHTTPLIB_NO_EXCEPTIONS
 #include "ChatSession.h"
 #include <httplib.h>
 #include "GenerationResult.h"

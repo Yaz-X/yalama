@@ -9,7 +9,7 @@ class ChatSession
 {
 public:
     ChatSession();
-    GenerationResult Generate(std::string &openaiJson, std::function<void(const std::string &)> onTokenDecoded);
+    GenerationResult Generate(std::string &openaiJson, std::function<void(const std::string &)> onTokenDecoded, bool isCancel = false);
 
 private:
     static std::shared_ptr<Model> _sharedModel;
@@ -21,6 +21,7 @@ private:
     std::shared_ptr<Model> _model;
     std::vector<int64_t> _Tokens;
     std::vector<int> _EosPerPrompt;
+    std::vector<int64_t> _MaskedTokenIds;
 
     void EmitToken(const int64_t &nextID, int &emittedTokensCount, const std::function<void(const std::string &)> &onTokenDecoded);
     bool IsRepeatDetected(std::deque<int64_t> &tokenQueue, const std::vector<int64_t> &stopSeq);

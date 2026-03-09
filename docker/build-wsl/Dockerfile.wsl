@@ -1,8 +1,9 @@
-FROM ubuntu:24.04
+FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     build-essential \
     gcc-12 g++-12 \
     cmake \
@@ -10,12 +11,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     unzip \
     && rm -rf /var/lib/apt/lists/*
-
-# CUDA 12.8 (WSL repo)
-RUN wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb \
-    && dpkg -i cuda-keyring_1.1-1_all.deb \
-    && apt-get update \
-    && apt-get -y install cuda-toolkit-12-8
 
 # LibTorch
 RUN wget -O libtorch.zip https://download.pytorch.org/libtorch/cu128/libtorch-shared-with-deps-2.10.0%2Bcu128.zip \
@@ -25,14 +20,23 @@ RUN wget -O libtorch.zip https://download.pytorch.org/libtorch/cu128/libtorch-sh
 ENV LIBTORCH_PATH=/opt/libtorch
 ENV LD_LIBRARY_PATH=/opt/libtorch/lib:$LD_LIBRARY_PATH
 
-COPY . .
+COPY src ./src
+COPY include ./include
+COPY extern ./extern
+COPY CMakeLists.txt .
 
 RUN cmake -B build -G Ninja \
-    && cmake --build build
+    && cmake --build build \
+    && cp build/yalama /yalama \
+    && rm -rf /app/* \
+    && mv /yalama /app/yalama \
+    && rm -f /yalama
+
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 EXPOSE 5067
 
-ENV NVIDIA_VISIBLE_DEVICES all
-ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
-
-CMD ["/app/yalama"]
+ENTRYPOINT ["/app/yalama"]

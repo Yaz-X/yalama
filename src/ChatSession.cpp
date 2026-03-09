@@ -13,6 +13,8 @@
 #include <string>
 #include <torch/torch.h>
 
+using hr_clock = std::chrono::high_resolution_clock;
+
 std::shared_ptr<Model> ChatSession::_sharedModel = nullptr;
 std::once_flag ChatSession::_modelInitFlag;
 std::regex ChatSession::_NewLineRegex = std::regex("Ċ");
@@ -39,9 +41,44 @@ ChatSession::ChatSession()
                    { _sharedModel = std::make_shared<Model>(); });
 
     _model = _sharedModel;
+
+    if (_MaskedTokenIds.empty())
+    {
+        for (const auto &[id, token] : Tokenizer::GetSpecialTokens())
+        {
+            if (token != "<|eot_id|>" &&
+                token != "<|eos|>" &&
+                token != "<|end_of_text|>")
+            {
+                _MaskedTokenIds.push_back(id);
+
+                std::string specialToken = token;
+                specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '<'), specialToken.end());
+                specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '>'), specialToken.end());
+                specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '|'), specialToken.end());
+
+                auto textIds = Tokenizer::GetEncodedSpecialTokens()[specialToken];
+
+                for (auto tid : textIds)
+                {
+                    _MaskedTokenIds.push_back(tid);
+                }
+            }
+        }
+    }
+
+    std::sort(_MaskedTokenIds.begin(), _MaskedTokenIds.end());
+    _MaskedTokenIds.erase(
+        std::unique(_MaskedTokenIds.begin(), _MaskedTokenIds.end()),
+        _MaskedTokenIds.end());
+
+    std::cout << "Masked Size: " << _MaskedTokenIds.size() << std::endl
+              << std::flush;
+
+    return;
 }
 
-GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<void(const std::string &)> onTokenDecoded)
+GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<void(const std::string &)> onTokenDecoded, bool isCancel)
 {
     int emittedTokens = 0;
     int generatedTokens = 0;
@@ -50,115 +87,134 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
     std::deque<int64_t> tokensEmitQueue;
     std::vector<int64_t> tokensHistory;
     GenerationResult generationResult;
+    torch::Tensor input;
+    torch::Tensor last;
+    torch::Tensor logits;
+    hr_clock::time_point startTime;
+    hr_clock::time_point endTime;
+    int64_t nextID;
 
     generationResult.IsSuccess = FormatInput(openaiJson);
 
     if (generationResult.IsSuccess)
     {
         torch::Tensor next;
-        auto input = torch::tensor(_Tokens, torch::kInt64).unsqueeze(0).to(torch::kCUDA);
+        input = torch::tensor(_Tokens, torch::kInt64).unsqueeze(0).to(torch::kCUDA);
 
         _model->BeginInfer();
 
         while (!end)
         {
-            auto start_time = std::chrono::high_resolution_clock::now();
-
-            generationResult = _model->Infer(input, _EosPerPrompt);
-
-            if (!generationResult.IsSuccess)
-                break;
-
-            auto logits = generationResult.Logits;
-
-            auto end_time = std::chrono::high_resolution_clock::now();
-            tokenTimes += std::chrono::duration<double>(end_time - start_time).count();
-
-            auto last = logits.select(1, input.size(1) - 1);
-
-            auto nextID = Sample(last, ConfigManager::IsGreedy.value() || generatedTokens == 0);
-
-            generatedTokens++;
-
-            for (const auto eos : ConfigManager::EosIds)
+            if (isCancel)
             {
-                if (nextID == eos)
-                {
-                    end = true;
-                    break;
-                }
-            }
-
-            if (!end && (_Tokens.size() + generatedTokens) >= ConfigManager::MaxSequenceLength)
                 end = true;
-
-            if (!end)
+                generationResult.IsSuccess = false;
+                generationResult.Error = GenerationError::Canceled;
+            }
+            else
             {
-                tokensEmitQueue.push_back(nextID);
+                startTime = std::chrono::high_resolution_clock::now();
 
-                if (!Tokenizer::HasChatTemplate() &&
-                    tokensHistory.size() > ConfigManager::MaxSequenceLength)
+                generationResult = _model->Infer(input, _EosPerPrompt);
+
+                if (!generationResult.IsSuccess)
+                    break;
+
+                logits = generationResult.Logits;
+
+                last = logits.select(1, input.size(1) - 1);
+
+                nextID = Sample(last, ConfigManager::IsGreedy.value() || generatedTokens == 0);
+
+                endTime = std::chrono::high_resolution_clock::now();
+
+                if (generatedTokens > 0)
                 {
-                    tokensHistory.erase(tokensHistory.begin());
+                    tokenTimes += std::chrono::duration<double>(endTime - startTime).count();
                 }
 
-                for (const auto &stopSeq : ChatTemplateProvider::SoftStopTokenSeqs)
+                generatedTokens++;
+
+                for (const auto eos : ConfigManager::EosIds)
                 {
-                    if (tokensEmitQueue.size() >= stopSeq.size())
+                    if (nextID == eos)
                     {
-                        for (size_t start = 0; start + stopSeq.size() <= tokensEmitQueue.size(); ++start)
-                        {
-                            bool match = true;
-
-                            for (size_t i = 0; i < stopSeq.size(); ++i)
-                            {
-                                if (tokensEmitQueue[start + i] != stopSeq[i])
-                                {
-                                    match = false;
-                                    break;
-                                }
-                            }
-
-                            if (match)
-                            {
-                                tokensEmitQueue.erase(
-                                    tokensEmitQueue.begin() + start,
-                                    tokensEmitQueue.end());
-
-                                end = true;
-                                break;
-                            }
-                        }
+                        end = true;
+                        break;
                     }
                 }
 
-                // non instruct model
-                if (emittedTokens > _DecodeSafetyWindowToEmitTokens)
-                    end = IsRepeatDetected(tokensEmitQueue, tokensHistory);
-
-                if (!tokensEmitQueue.empty() && generatedTokens - emittedTokens >= _DecodeSafetyWindowToEmitTokens)
-                {
-                    if (!end)
-                    {
-                        EmitToken(tokensEmitQueue[0], emittedTokens, onTokenDecoded);
-
-                        if (!Tokenizer::HasChatTemplate())
-                            tokensHistory.push_back(tokensEmitQueue[0]);
-
-                        tokensEmitQueue.pop_front();
-                    }
-                }
+                if (!end && (_Tokens.size() + generatedTokens) >= ConfigManager::MaxSequenceLength)
+                    end = true;
 
                 if (!end)
                 {
-                    next = torch::tensor({nextID}, torch::kInt64).unsqueeze(0).to(torch::kCUDA);
+                    tokensEmitQueue.push_back(nextID);
 
-                    if (!ConfigManager::IsKVCacheEnabled.value())
-                        input = torch::cat({input, next}, 1);
-                    else
-                        input = next;
+                    if (!Tokenizer::HasChatTemplate() &&
+                        tokensHistory.size() > ConfigManager::MaxSequenceLength)
+                    {
+                        tokensHistory.erase(tokensHistory.begin());
+                    }
 
-                    TraceLogger::_TraceStep++;
+                    for (const auto &stopSeq : ChatTemplateProvider::SoftStopTokenSeqs)
+                    {
+                        if (tokensEmitQueue.size() >= stopSeq.size())
+                        {
+                            for (size_t start = 0; start + stopSeq.size() <= tokensEmitQueue.size(); ++start)
+                            {
+                                bool match = true;
+
+                                for (size_t i = 0; i < stopSeq.size(); ++i)
+                                {
+                                    if (tokensEmitQueue[start + i] != stopSeq[i])
+                                    {
+                                        match = false;
+                                        break;
+                                    }
+                                }
+
+                                if (match)
+                                {
+                                    tokensEmitQueue.erase(
+                                        tokensEmitQueue.begin() + start,
+                                        tokensEmitQueue.end());
+
+                                    end = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // non instruct model
+                    if (emittedTokens > _DecodeSafetyWindowToEmitTokens)
+                        end = IsRepeatDetected(tokensEmitQueue, tokensHistory);
+
+                    if (!tokensEmitQueue.empty() && generatedTokens - emittedTokens >= _DecodeSafetyWindowToEmitTokens)
+                    {
+                        if (!end)
+                        {
+                            EmitToken(tokensEmitQueue[0], emittedTokens, onTokenDecoded);
+
+                            if (!Tokenizer::HasChatTemplate())
+                                tokensHistory.push_back(tokensEmitQueue[0]);
+
+                            tokensEmitQueue.pop_front();
+                        }
+                    }
+
+                    if (!end)
+                    {
+                        next = torch::tensor({nextID}, torch::kInt64).unsqueeze(0).to(torch::kCUDA);
+
+                        if (!ConfigManager::IsKVCacheEnabled.value())
+                            input = torch::cat({input, next}, 1);
+                        else
+                            input = next;
+
+                        TraceLogger::_TraceStep++;
+                    }
                 }
             }
         }
@@ -173,7 +229,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                 }
             }
 
-            double tps = generatedTokens / (tokenTimes == 0 ? 1 : tokenTimes);
+            double tps = (generatedTokens == 0 ? 0 : generatedTokens - 1) / (tokenTimes == 0 ? 1 : tokenTimes);
 
             std::cout << "\nTokens Per Second: " << std::to_string(tps) << std::endl;
         }
@@ -187,6 +243,8 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                     std::cout << "OOM, KV Cache Capacity Exceeded, consider increasing KV Cache Capacity from args or yalam_config.json file" << std::endl;
                 else if (generationResult.Error == GenerationError::SequenceLengthExceeded)
                     std::cout << "Max Sequence Length Exceeded, Make sure your prompt is less or equal to model max sequence length" << std::endl;
+                else if (generationResult.Error == GenerationError::Canceled)
+                    std::cout << "Generation Canceled by the user" << std::endl;
             }
         }
     }
@@ -424,26 +482,9 @@ int64_t ChatSession::Sample(torch::Tensor &lastLogitsToken, bool isGreedy)
         torch::Tensor scaled = lastLogitsToken / ConfigManager::Temp;
 
         // Mask special tokens
-        for (const auto &[id, token] : Tokenizer::GetSpecialTokens())
+        for (auto id : _MaskedTokenIds)
         {
-            if (token != "<|eot_id|>" &&
-                token != "<|eos|>" &&
-                token != "<|end_of_text|>")
-            {
-                scaled[0][id] = -1e9f;
-
-                std::string specialToken = token;
-                specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '<'), specialToken.end());
-                specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '>'), specialToken.end());
-                specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '|'), specialToken.end());
-
-                auto textIds = Tokenizer::GetEncodedSpecialTokens()[specialToken];
-
-                for (auto tid : textIds)
-                {
-                    scaled[0][tid] = -1e9f;
-                }
-            }
+            scaled[0][id] = -1e9f;
         }
 
         auto topk = torch::topk(scaled, ConfigManager::TopK, -1);

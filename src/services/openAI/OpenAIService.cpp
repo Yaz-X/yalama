@@ -76,6 +76,7 @@ void OpenAIService::HandleCompletion(const httplib::Request &request, httplib::R
                 "text/event-stream",
                 [request](size_t, httplib::DataSink &sink)
                 {
+                    std::atomic<bool> clientDisconnected = false;
                     ChatSession session;
                     std::string requestBody = request.body;
 
@@ -83,6 +84,9 @@ void OpenAIService::HandleCompletion(const httplib::Request &request, httplib::R
                         requestBody,
                         [&](const std::string &token)
                         {
+                            if (clientDisconnected)
+                                return;
+
                             if (!token.empty())
                             {
                                 nlohmann::json chunk;
@@ -93,9 +97,13 @@ void OpenAIService::HandleCompletion(const httplib::Request &request, httplib::R
                                 std::string payload =
                                     "data: " + chunk.dump() + "\n\n";
 
-                                sink.write(payload.c_str(), payload.size());
+                                if (!sink.write(payload.c_str(), payload.size()))
+                                {
+                                    clientDisconnected = true;
+                                    return;
+                                }
                             }
-                        });
+                        }, clientDisconnected);
 
                     if (!genResults.IsSuccess)
                     {
