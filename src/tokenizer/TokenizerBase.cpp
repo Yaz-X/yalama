@@ -111,12 +111,15 @@ void TokenizerBase::LoadFromJson()
         }
     }
 
-    std::cout << "Special Tokens Count: " << _specialTokens.size() << std::endl
-              << std::flush;
-    for (auto &[id, token] : _specialTokens)
+    if (ConfigManager::IsDebuggingEnabled.value())
     {
-        std::cout << "SPECIAL TOKEN: " << id << " -> " << token << std::endl
+        std::cout << "Special Tokens Count: " << _specialTokens.size() << std::endl
                   << std::flush;
+        for (auto &[id, token] : _specialTokens)
+        {
+            std::cout << "SPECIAL TOKEN: " << id << " -> " << token << std::endl
+                      << std::flush;
+        }
     }
 
     _byteEncoder = BuildByteEncoder();
@@ -676,7 +679,6 @@ std::string TokenizerBase::Decode(const std::vector<int64_t> &ids)
         }
     }
 
-    
     return decoded;
 }
 

@@ -1,6 +1,6 @@
 # YALAMA
 
-## **Production-grade Native C++ LLaMA Runtime**
+## **Production-grade Native C++ LLaMA/Mistral Runtime**
 
 Deterministic high-performance **LibTorch inference runtime** built entirely in C++.
 
@@ -30,6 +30,7 @@ Deterministic high-performance **LibTorch inference runtime** built entirely in 
 - LLaMA 3.1 8B Base
 - LLaMA 3.1 8B Instruct
 - LLaMA 3.2 3B Instruct
+- Mistral 7B Instruct v0.3
 
 Larger models (e.g. **70B**) are expected to work but were not tested due to hardware limits.
 
@@ -37,7 +38,7 @@ Larger models (e.g. **70B**) are expected to work but were not tested due to har
 
 **FP16 only** (no quantization).
 
-Tested on **RTX 4090**  
+Tested on **RTX 4090 3B**  
 KV Cache enabled, CUDA Graph disabled.
 
 |      Decoding      |     Throughput    |
