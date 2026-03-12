@@ -6,21 +6,25 @@
 */
 #include "Helpers.h"
 #include "TorchChecker.h"
-#include "Model.h"
+#include "ModelBase.h"
 #include "ConfigManager.h"
 #include "TraceLogger.h"
 #include <cmath>
 #include <filesystem>
+#include <cuda_runtime.h>
+#include <algorithm>
 
 int TraceLogger::_TraceStep = 0;
 
-Model::Model()
+void ModelBase::Load()
 {
-    Load();
-}
 
-void Model::Load()
-{
+    if (!_Weights.empty())
+        return;
+
+    std::cout << "Load Called..." << std::endl
+              << std::flush;
+
     std::filesystem::path modelPath = ConfigManager::ModelPath;
 
     if (!std::filesystem::exists(modelPath) || !std::filesystem::is_directory(modelPath))
@@ -28,6 +32,11 @@ void Model::Load()
 
     if (std::filesystem::is_empty(modelPath))
         throw std::runtime_error("Folder (" + modelPath.string() + ") is Empty, make sure the model path has safetensor files");
+
+    PopulateWeightNames();
+
+    if (_WeightNames.empty())
+        throw std::runtime_error("_WeightNames map is empty, this needs to be populated in dervied class");
 
     std::vector<std::string> weightFiles;
     size_t totalTensorCount = 0;
@@ -45,6 +54,7 @@ void Model::Load()
 
                 if (file)
                 {
+
                     uint64_t header_len;
                     file.read(reinterpret_cast<char *>(&header_len), sizeof(header_len));
 
@@ -53,7 +63,9 @@ void Model::Load()
 
                     std::string headerStr(header.begin(), header.end());
 
-                    if (headerStr.find("\"data_offsets\"") != std::string::npos)
+                    if (headerStr.find("\"data_offsets\"") != std::string::npos &&
+                        headerStr.find("\"__metadata__\"") != std::string::npos &&
+                        headerStr.find("\"format\":\"pt\"") != std::string::npos)
                         weightFiles.push_back(path.string());
                 }
             }
@@ -69,13 +81,15 @@ void Model::Load()
     // Load all shards
     for (const auto &path : weightFiles)
     {
+        auto safeTensor = load_safetensors(path);
+
         std::cout << "Loading Shard from: " + path << std::endl;
-        shards.push_back(load_safetensors(path));
+        shards.push_back(safeTensor);
     }
 
     if (!ConfigManager::IsShowLoadedWeights.value())
     {
-        std::cout << "Please wait while loading Weights from shards, if you want to see the weight names while loading, supply (--isShowLoadingWeights 1) arg" << std::endl
+        std::cout << "Please wait while loading Weights from shards, if you want to see the weight names while loading, supply (--showloadedweights 1) arg" << std::endl
                   << std::endl;
 
         for (auto &st : shards)
@@ -86,34 +100,37 @@ void Model::Load()
     {
         for (auto &[name, meta] : st.tensors)
         {
-            char *base = reinterpret_cast<char *>(st.data);
-            char *ptr = base + meta.offset0;
-
-            std::vector<int64_t> dims = meta.shape;
-
-            if (ConfigManager::IsShowLoadedWeights.value())
-                std::cout << "Loading Weight: " << name << std::endl;
-
-            auto cpu = torch::from_blob(
-                           (void *)ptr,
-                           torch::IntArrayRef(dims),
-                           torch::kBFloat16)
-                           .clone();
-
-            if (ConfigManager::IsShowLoadedWeights.value())
-                std::cout << "Move " << name << " to GPU" << std::endl;
-
-            loadedTensorCount++;
-
-            _Weights[name] = cpu.to(torch::kCUDA);
-
-            if (!ConfigManager::IsShowLoadedWeights.value())
+            if (!_Weights.contains(name) && IsLoadWeight(name))
             {
-                float progress =
-                    static_cast<float>(loadedTensorCount) /
-                    static_cast<float>(totalTensorCount);
+                char *base = reinterpret_cast<char *>(st.data);
+                char *ptr = base + meta.offset0;
 
-                ShowProgressBar(progress);
+                std::vector<int64_t> dims = meta.shape;
+
+                if (ConfigManager::IsShowLoadedWeights.value())
+                    std::cout << "Loading Weight: " << name << std::endl;
+
+                auto cpu = torch::from_blob(
+                               (void *)ptr,
+                               torch::IntArrayRef(dims),
+                               torch::kBFloat16)
+                               .clone();
+
+                if (ConfigManager::IsShowLoadedWeights.value())
+                    std::cout << "Move " << name << " to GPU" << std::endl;
+
+                loadedTensorCount++;
+
+                _Weights[name] = cpu.to(torch::kCUDA);
+
+                if (!ConfigManager::IsShowLoadedWeights.value())
+                {
+                    float progress =
+                        static_cast<float>(loadedTensorCount) /
+                        static_cast<float>(totalTensorCount);
+
+                    ShowProgressBar(progress);
+                }
             }
         }
     }
@@ -121,12 +138,16 @@ void Model::Load()
     if (!ConfigManager::IsShowLoadedWeights.value())
         std::cout << std::endl;
 
-    _FinalRMSNormWeight = &_Weights.at("model.norm.weight");
+    _FinalRMSNormWeight = &_Weights.at(_WeightNames.at(WeightType::FinalNorm));
 
-    if (_Weights.contains("lm_head.weight"))
-        _LMHeadWeight = &_Weights.at("lm_head.weight");
+    if (_Weights.contains(_WeightNames.at(WeightType::LMHead)))
+    {
+        _LMHeadWeight = &_Weights.at(_WeightNames.at(WeightType::LMHead));
+    }
     else
-        _LMHeadWeight = &_Weights.at("model.embed_tokens.weight");
+    {
+        _LMHeadWeight = &_Weights.at(_WeightNames.at(WeightType::Embedding));
+    }
 
     TORCH_CHECKER(_LMHeadWeight);
 
@@ -142,22 +163,35 @@ void Model::Load()
 
     for (int i = 0; i < ConfigManager::NumLayers; i++)
     {
-        _RMSNormPreAttentionWeightKeys[i] = &_Weights.at("model.layers." + std::to_string(i) + ".input_layernorm.weight");
-        _RMSNormPostAttentionWeightKeys[i] = &_Weights.at("model.layers." + std::to_string(i) + ".post_attention_layernorm.weight");
-        _QWeightKeys[i] = &_Weights.at("model.layers." + std::to_string(i) + ".self_attn.q_proj.weight");
-        _KWeightKeys[i] = &_Weights.at("model.layers." + std::to_string(i) + ".self_attn.k_proj.weight");
-        _VWeightKeys[i] = &_Weights.at("model.layers." + std::to_string(i) + ".self_attn.v_proj.weight");
-        _WoWeightKeys[i] = &_Weights.at("model.layers." + std::to_string(i) + ".self_attn.o_proj.weight");
+        _RMSNormPreAttentionWeightKeys[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::PreAttentionNorm), i));
 
-        _Wgate[i] = &_Weights.at("model.layers." + std::to_string(i) + ".mlp.gate_proj.weight");
-        _WUp[i] = &_Weights.at("model.layers." + std::to_string(i) + ".mlp.up_proj.weight");
-        _Wdown[i] = &_Weights.at("model.layers." + std::to_string(i) + ".mlp.down_proj.weight");
+        _RMSNormPostAttentionWeightKeys[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::PostAttentionNorm), i));
+
+        _QWeightKeys[i] =
+            &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::QProj), i));
+
+        _KWeightKeys[i] =
+            &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::KProj), i));
+
+        _VWeightKeys[i] =
+            &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::VProj), i));
+
+        _WoWeightKeys[i] =
+            &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::OProj), i));
+
+        _Wgate[i] =
+            &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::GateProj), i));
+
+        _WUp[i] =
+            &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::UpProj), i));
+
+        _Wdown[i] =
+            &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::DownProj), i));
     }
-
-    std::cout << "Model is Running..." << std::endl;
 
     InitKVCache();
     BuildRopeCache();
+    CalculateMaxSequenceLength();
 
     torch::globalContext().setSDPUseFlash(true);
     torch::globalContext().setSDPUseMemEfficient(true);
@@ -166,7 +200,48 @@ void Model::Load()
     torch::NoGradGuard no_grad;
 }
 
-void Model::BeginInfer()
+bool ModelBase::IsLoadWeight(const std::string &name)
+{
+    bool isFound = false;
+
+    for (auto &[type, templ] : _WeightNames)
+    {
+        if (templ.find("%d") != std::string::npos)
+        {
+            for (int i = 0; i < ConfigManager::NumLayers; i++)
+            {
+                std::string expanded = FormatWeightNameForLoading(templ, i);
+
+                if (expanded == name)
+                {
+                    isFound = true;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            if (templ == name)
+            {
+                isFound = true;
+            }
+        }
+
+        if (isFound)
+        {
+            break;
+        }
+    }
+
+    return isFound;
+}
+
+std::string ModelBase::FormatWeightNameForLoading(const std::string &weightNameTemplate, int layer)
+{
+    return Replace(weightNameTemplate, "%d", std::to_string(layer));
+}
+
+void ModelBase::BeginInfer()
 {
     TraceLogger::_TraceStep = 0;
     _IsInferReady = true;
@@ -182,7 +257,35 @@ void Model::BeginInfer()
     }
 }
 
-void Model::InitKVCache()
+void ModelBase::CalculateMaxSequenceLength()
+{
+    size_t freeBytes = 0;
+    size_t totalBytes = 0;
+
+    cudaMemGetInfo(&freeBytes, &totalBytes);
+
+    size_t bytesPerToken =
+        ConfigManager::NumHeads *
+        ConfigManager::HeadDim *
+        sizeof(torch::BFloat16) *
+        3 *
+        ConfigManager::NumLayers;
+
+    auto tokensPerAvailableMemory = static_cast<int>((freeBytes * 0.8) / bytesPerToken); // 0.8 = Use 80% of free memory
+
+    ConfigManager::MaxSequenceLength = std::min(ConfigManager::MaxSequenceLength, tokensPerAvailableMemory);
+
+    if (ConfigManager::MaxSequenceLength < 512)    
+        throw std::runtime_error(
+            "GPU memory too low: runtime cannot support the minimum context of 512 tokens");    
+
+    std::cout
+        << "Runtime Max Sequence Length After Calculation: "
+        << ConfigManager::MaxSequenceLength
+        << std::endl;
+}
+
+void ModelBase::InitKVCache()
 {
 
     if (ConfigManager::IsKVCacheEnabled.value())
@@ -214,7 +317,7 @@ void Model::InitKVCache()
     }
 }
 
-void Model::BuildRopeCache()
+void ModelBase::BuildRopeCache()
 {
     int maxT = ConfigManager::MaxSequenceLength;
     int D = ConfigManager::HeadDim;
@@ -238,7 +341,7 @@ void Model::BuildRopeCache()
     _RopeSin = emb.sin().to(torch::kBFloat16).unsqueeze(0).unsqueeze(0);
 }
 
-GenerationResult Model::Infer(torch::Tensor &tokenVectors, std::vector<int> &eosPerPrompt)
+GenerationResult ModelBase::Infer(torch::Tensor &tokenVectors, std::vector<int> &eosPerPrompt)
 {
     GenerationResult result;
     AttentionCalculationResult attnCalculationResult;
@@ -246,72 +349,67 @@ GenerationResult Model::Infer(torch::Tensor &tokenVectors, std::vector<int> &eos
     if (!_IsInferReady)
         throw std::runtime_error("Call BeginInfer() first");
 
-    bool isValid = EnsureSequenceLength(tokenVectors, eosPerPrompt);
+    EnsureSequenceLength(tokenVectors, eosPerPrompt);
 
-    if (!isValid)
-        result.Error = GenerationError::SequenceLengthExceeded;
-    else
+    torch::Tensor x = GetEmbeddings(tokenVectors);
+
+    TORCH_CHECKER(x.dim() == 3);
+
+    for (int layer = 0; layer < ConfigManager::NumLayers; layer++)
     {
-        torch::Tensor x = GetEmbeddings(tokenVectors);
+        TraceLogger::Dump("layer_input", x, TraceLogger::_TraceStep);
 
-        TORCH_CHECKER(x.dim() == 3);
+        auto xNorm = CalculatePreAttentionRMSNorm(x, layer);
 
-        for (int layer = 0; layer < ConfigManager::NumLayers; layer++)
+        TraceLogger::Dump("rmsnorm_pre_attn", xNorm, TraceLogger::_TraceStep);
+
+        attnCalculationResult = CalculateInferenceAttention(xNorm, layer);
+
+        if (!attnCalculationResult.IsKVCacheCapacityValid)
         {
-            TraceLogger::Dump("layer_input", x, TraceLogger::_TraceStep);
-
-            auto xNorm = CalculatePreAttentionRMSNorm(x, layer);
-
-            TraceLogger::Dump("rmsnorm_pre_attn", xNorm, TraceLogger::_TraceStep);
-
-            attnCalculationResult = CalculateInferenceAttention(xNorm, layer);
-
-            if (!attnCalculationResult.IsKVCacheCapacityValid)
-            {
-                result.Error = GenerationError::KVCacheExceeded;
-                break;
-            }
-
-            x = x + attnCalculationResult.CalculatedAttention;
-            TraceLogger::Dump("resid_attn", x, TraceLogger::_TraceStep);
-
-            auto xNorm2 = CalculatePostAttentionRMSNorm(x, layer);
-
-            TraceLogger::Dump("rmsnorm_post_attn", xNorm2, TraceLogger::_TraceStep);
-
-            auto ffnOut = CalculateFFN(xNorm2, layer); // BF16
-
-            TraceLogger::Dump("ffn_out", ffnOut, TraceLogger::_TraceStep);
-
-            x = x + ffnOut;
-
-            TraceLogger::Dump("resid_ffn_out", x, TraceLogger::_TraceStep);
+            result.Error = GenerationError::KVCacheExceeded;
+            break;
         }
 
-        if (attnCalculationResult.IsKVCacheCapacityValid)
+        x = x + attnCalculationResult.CalculatedAttention;
+        TraceLogger::Dump("resid_attn", x, TraceLogger::_TraceStep);
+
+        auto xNorm2 = CalculatePostAttentionRMSNorm(x, layer);
+
+        TraceLogger::Dump("rmsnorm_post_attn", xNorm2, TraceLogger::_TraceStep);
+
+        auto ffnOut = CalculateFFN(xNorm2, layer); // BF16
+
+        TraceLogger::Dump("ffn_out", ffnOut, TraceLogger::_TraceStep);
+
+        x = x + ffnOut;
+
+        TraceLogger::Dump("resid_ffn_out", x, TraceLogger::_TraceStep);
+    }
+
+    if (attnCalculationResult.IsKVCacheCapacityValid)
+    {
+
+        TraceLogger::Dump("before_final_rms", x, TraceLogger::_TraceStep);
+
+        x = CalculateFinalRMSNorm(x);
+
+        TraceLogger::Dump("final_rms_norm", x, TraceLogger::_TraceStep);
+
+        auto logits = torch::matmul(x, _LMHeadWeight->t());
+
+        TraceLogger::Dump("final_logits", logits, TraceLogger::_TraceStep);
+
+        if (ConfigManager::IsKVCacheEnabled.value())
         {
-
-            TraceLogger::Dump("before_final_rms", x, TraceLogger::_TraceStep);
-
-            x = CalculateFinalRMSNorm(x);
-
-            TraceLogger::Dump("final_rms_norm", x, TraceLogger::_TraceStep);
-
-            auto logits = torch::matmul(x, _LMHeadWeight->t());
-
-            TraceLogger::Dump("final_logits", logits, TraceLogger::_TraceStep);
-
-            if (ConfigManager::IsKVCacheEnabled.value())
-            {
-                // Prefill
-                if (_LastKVCacheTokenIndex == 0)
-                    _LastKVCacheTokenIndex = tokenVectors.size(1) - 1;
-                else // Decode
-                    _LastKVCacheTokenIndex++;
-            }
-
-            result.Logits = logits;
+            // Prefill
+            if (_LastKVCacheTokenIndex == 0)
+                _LastKVCacheTokenIndex = tokenVectors.size(1) - 1;
+            else // Decode
+                _LastKVCacheTokenIndex++;
         }
+
+        result.Logits = logits;
     }
 
     if (result.Error != GenerationError::None)
@@ -320,21 +418,19 @@ GenerationResult Model::Infer(torch::Tensor &tokenVectors, std::vector<int> &eos
     return result;
 }
 
-bool Model::EnsureSequenceLength(torch::Tensor &tokenVectors, std::vector<int> &eosPerPrompt)
+void ModelBase::EnsureSequenceLength(torch::Tensor &tokenVectors, std::vector<int> &eosPerPrompt)
 {
-    bool isValid = true;
+    int64_t numOfTokens = tokenVectors.size(1);
 
-    while (tokenVectors.size(1) > ConfigManager::MaxSequenceLength)
+    while (numOfTokens > ConfigManager::MaxSequenceLength)
     {
-        if (tokenVectors.size(1) == 0)
-        {
-            isValid = false;
-            break;
-        }
-
         if (eosPerPrompt.empty())
         {
             tokenVectors = tokenVectors.index({torch::indexing::Slice(), torch::indexing::Slice(1, torch::indexing::None)});
+
+            if (ConfigManager::IsServiceLoggingEnabled.value())
+                std::cout << "Max Sequence Length of " << std::to_string(ConfigManager::MaxSequenceLength) << " exceeded, tokens size: "
+                          << std::to_string(numOfTokens) << ", dropping oldes token" << std::endl;
         }
         else
         {
@@ -346,13 +442,17 @@ bool Model::EnsureSequenceLength(torch::Tensor &tokenVectors, std::vector<int> &
 
             for (int &eos : eosPerPrompt)
                 eos -= dropUntil;
-        }
-    }
 
-    return isValid;
+            if (ConfigManager::IsServiceLoggingEnabled.value())
+                std::cout << "Max Sequence Length of " << std::to_string(ConfigManager::MaxSequenceLength) << " exceeded, tokens size: "
+                          << std::to_string(numOfTokens) << ", dropping oldes prompt" << std::endl;
+        }
+
+        numOfTokens = tokenVectors.size(1);
+    }
 }
 
-AttentionCalculationResult Model::CalculateInferenceAttention(const torch::Tensor &x, int layer)
+AttentionCalculationResult ModelBase::CalculateInferenceAttention(const torch::Tensor &x, int layer)
 {
     AttentionCalculationResult result;
 
@@ -464,19 +564,45 @@ AttentionCalculationResult Model::CalculateInferenceAttention(const torch::Tenso
         TORCH_CHECKER(k.size(0) == B && k.size(3) == D);
         TORCH_CHECKER(v.size(0) == B && v.size(3) == D);
 
-        auto kt = k.transpose(2, 3);
-        TraceLogger::Dump("k_t2", kt, TraceLogger::_TraceStep);
+        torch::Tensor attOut;
 
-        auto scores = CalculateScores(q, kt, layer);
+        if (!ConfigManager::IsKVCacheEnabled.value() || _LastKVCacheTokenIndex == 0)
+        {
+            int64_t Tq = q.size(2);
+            int64_t Tk = k.size(2);            
+            
+            auto mask =
+                torch::triu(
+                    torch::ones({Tk, Tk}, q.options()),
+                    1) *
+                q.new_full({}, -65504.0);
 
-        TORCH_CHECKER(kt.size(0) == B && kt.size(1) == Hq && kt.size(2) == D);
-        TORCH_CHECKER(scores.size(0) == B && scores.size(1) == Hq);
+            mask = mask.slice(1, 0, Tq)
+                       .unsqueeze(0)
+                       .unsqueeze(0);
 
-        auto probs = ApplySoftMaxAndGetProbs(scores);
+            TraceLogger::Dump("attn_scores_with_mask", mask, TraceLogger::_TraceStep);
 
-        TraceLogger::Dump("attn_softmax", probs, TraceLogger::_TraceStep);
-
-        auto attOut = MultiplyProbsWithV(probs, v);
+            attOut =
+                torch::scaled_dot_product_attention(
+                    q,
+                    k,
+                    v,
+                    mask,
+                    0.0,
+                    false);
+        }
+        else
+        {
+            attOut =
+                torch::scaled_dot_product_attention(
+                    q,
+                    k,
+                    v,
+                    c10::nullopt,
+                    0.0,
+                    false);
+        }
 
         TraceLogger::Dump("attn_heads", attOut, TraceLogger::_TraceStep);
 
@@ -494,22 +620,22 @@ AttentionCalculationResult Model::CalculateInferenceAttention(const torch::Tenso
     return result;
 }
 
-torch::Tensor Model::CalculatePreAttentionRMSNorm(const torch::Tensor &x, int layer)
+torch::Tensor ModelBase::CalculatePreAttentionRMSNorm(const torch::Tensor &x, int layer)
 {
     return CalculateRMSNorm(x, _RMSNormPreAttentionWeightKeys[layer]);
 }
 
-torch::Tensor Model::CalculatePostAttentionRMSNorm(const torch::Tensor &x, int layer)
+torch::Tensor ModelBase::CalculatePostAttentionRMSNorm(const torch::Tensor &x, int layer)
 {
     return CalculateRMSNorm(x, _RMSNormPostAttentionWeightKeys[layer]);
 }
 
-torch::Tensor Model::CalculateFinalRMSNorm(const torch::Tensor &x)
+torch::Tensor ModelBase::CalculateFinalRMSNorm(const torch::Tensor &x)
 {
     return CalculateRMSNorm(x, _FinalRMSNormWeight);
 }
 
-torch::Tensor Model::CalculateRMSNorm(const torch::Tensor &x, const torch::Tensor *weight)
+torch::Tensor ModelBase::CalculateRMSNorm(const torch::Tensor &x, const torch::Tensor *weight)
 {
 
     TORCH_CHECKER(weight);
@@ -523,7 +649,7 @@ torch::Tensor Model::CalculateRMSNorm(const torch::Tensor &x, const torch::Tenso
     return normed * (*weight).t();
 }
 
-torch::Tensor Model::CalculateFFN(const torch::Tensor &x, int layer)
+torch::Tensor ModelBase::CalculateFFN(const torch::Tensor &x, int layer)
 {
     const auto &Wgate = *_Wgate[layer];
     const auto &Wup = *_WUp[layer];
@@ -540,7 +666,7 @@ torch::Tensor Model::CalculateFFN(const torch::Tensor &x, int layer)
     return down;
 }
 
-torch::Tensor Model::CalculateProjectionQ(const torch::Tensor &x, int layer)
+torch::Tensor ModelBase::CalculateProjectionQ(const torch::Tensor &x, int layer)
 {
     TORCH_CHECKER(_QWeightKeys[layer]->dim() == 2);
     TORCH_CHECKER(_QWeightKeys[layer]->size(0) == x.size(-1));
@@ -549,20 +675,20 @@ torch::Tensor Model::CalculateProjectionQ(const torch::Tensor &x, int layer)
     return torch::matmul(x, W.t());
 }
 
-torch::Tensor Model::CalculateProjectionK(const torch::Tensor &x, int layer)
+torch::Tensor ModelBase::CalculateProjectionK(const torch::Tensor &x, int layer)
 {
 
     auto &W = *_KWeightKeys[layer];
     return torch::matmul(x, W.t());
 }
 
-torch::Tensor Model::CalculateProjectionV(const torch::Tensor &x, int layer)
+torch::Tensor ModelBase::CalculateProjectionV(const torch::Tensor &x, int layer)
 {
     auto &W = *_VWeightKeys[layer];
     return torch::matmul(x, W.t());
 }
 
-torch::Tensor Model::ApplyInferencingRope(const torch::Tensor &x, int start_pos, std::string name)
+torch::Tensor ModelBase::ApplyInferencingRope(const torch::Tensor &x, int start_pos, std::string name)
 {
     auto T = x.size(2);
     auto D = x.size(3);
@@ -598,57 +724,7 @@ torch::Tensor Model::ApplyInferencingRope(const torch::Tensor &x, int start_pos,
     return out;
 }
 
-torch::Tensor Model::CalculateScores(const torch::Tensor &q, const torch::Tensor &kt, int layer)
-{
-    // QK^T
-    auto scores = torch::matmul(q, kt);
-
-    TraceLogger::Dump("attn_scores_before_scale", scores, TraceLogger::_TraceStep);
-
-    // scale ONCE
-    float scale = 1.0f / std::sqrt((float)ConfigManager::HeadDim);
-    scores = scores * scale;
-
-    TraceLogger::Dump("attn_scores_after_scale", scores, TraceLogger::_TraceStep);
-
-    if (!ConfigManager::IsKVCacheEnabled.value() || _LastKVCacheTokenIndex == 0)
-    {
-        // scores_f: [B, H, Tq, Tk]
-        int64_t Tq = scores.size(-2);
-        int64_t Tk = scores.size(-1);
-
-        auto mask = torch::triu(
-                        torch::ones({Tk, Tk}, scores.options()),
-                        1) *
-                    scores.new_full({}, -65504.0);
-
-        mask = mask.slice(1, 0, Tq)
-                   .unsqueeze(0)
-                   .unsqueeze(0);
-
-        scores = scores + mask;
-
-        TraceLogger::Dump("attn_scores_with_mask", scores, TraceLogger::_TraceStep);
-    }
-
-    return scores;
-}
-torch::Tensor Model::ApplySoftMaxAndGetProbs(const torch::Tensor &scores)
-{
-    auto probs = torch::softmax(scores.to(torch::kFloat32), -1).to(scores.dtype());
-
-    return probs;
-}
-torch::Tensor Model::MultiplyProbsWithV(const torch::Tensor &probs, const torch::Tensor &v)
-{
-    auto v2 = v;
-
-    auto out = torch::matmul(probs, v2);
-
-    return out;
-}
-
-torch::Tensor Model::MergeHeadsAttentionOut(const torch::Tensor &attentionOut)
+torch::Tensor ModelBase::MergeHeadsAttentionOut(const torch::Tensor &attentionOut)
 {
     // [B, H, T, D]
     auto y = attentionOut.transpose(1, 2).contiguous();
@@ -660,14 +736,14 @@ torch::Tensor Model::MergeHeadsAttentionOut(const torch::Tensor &attentionOut)
     return merged;
 }
 
-torch::Tensor Model::MultiplyWithWo(const torch::Tensor &mergedAttentionOut, int layer)
+torch::Tensor ModelBase::MultiplyWithWo(const torch::Tensor &mergedAttentionOut, int layer)
 {
     TORCH_CHECKER(_WoWeightKeys[layer]->size(0) == mergedAttentionOut.size(-1));
 
     return torch::matmul(mergedAttentionOut, _WoWeightKeys[layer]->t());
 }
 
-torch::Tensor Model::GetEmbeddings(const torch::Tensor &tokensIds)
+torch::Tensor ModelBase::GetEmbeddings(const torch::Tensor &tokensIds)
 {
     TraceLogger::Dump("token_ids", tokensIds, TraceLogger::_TraceStep);
 
@@ -679,7 +755,7 @@ torch::Tensor Model::GetEmbeddings(const torch::Tensor &tokensIds)
     return out;
 }
 
-bool Model::EnsureKVCapacity(int needed)
+bool ModelBase::EnsureKVCapacity(int needed)
 {
     bool isValid = true;
 

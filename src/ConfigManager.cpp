@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include "json.hpp"
+#include "Helpers.h"
 
 using json = nlohmann::json;
 
@@ -177,6 +178,18 @@ void ConfigManager::Load(std::string configFolderPath)
                         IsKVCacheEnabled = true;
                         PrintPropertyNotFound(key, "true");
                     }
+                }
+
+                if (ServicePort == 0)
+                {
+                    key = "port";
+                    if (jsonDeserializer.contains(key))
+                    {
+                        ServicePort = jsonDeserializer.at(key).get<int>();
+                        PrintPropertyLoaded(key, std::to_string(ServicePort));
+                    }
+                    else
+                        PrintPropertyNotFound(key, "5067");
                 }
 
                 if (KVCacheSizeInGB == 0)
@@ -358,6 +371,13 @@ void ConfigManager::Load(std::string configFolderPath)
 
         modelConfigFile >> jsonDeserializer;
 
+        std::string modelType = TrimToLower(jsonDeserializer.at("model_type").get<std::string>());
+
+        if (modelType == "llama")
+            ModelLoadedType = ModelType::LLama;
+        else if (modelType == "mistral")
+            ModelLoadedType = ModelType::Mistral;
+
         NumLayers = jsonDeserializer.at("num_hidden_layers").get<int>();
         HiddenSize = jsonDeserializer.at("hidden_size").get<int>();
         NumHeads = jsonDeserializer.at("num_attention_heads").get<int>();
@@ -378,17 +398,46 @@ void ConfigManager::Load(std::string configFolderPath)
         }
 
         MaxSequenceLength = jsonDeserializer.at("max_position_embeddings").get<int>();
+        RopeFactor = 1.0f;
+        RopeHighFreq = 1.0f;
+        RopeLowFreq = 1.0f;
+        RopeOrigMaxPos = MaxSequenceLength;
 
-        auto ropeScaling = jsonDeserializer.at("rope_scaling");
-        RopeFactor = ropeScaling.at("factor").get<float>();
-        RopeHighFreq = ropeScaling.at("high_freq_factor").get<float>();
-        RopeLowFreq = ropeScaling.at("low_freq_factor").get<float>();
-        RopeOrigMaxPos = ropeScaling.at("original_max_position_embeddings").get<int>();
+        if (jsonDeserializer.contains("rope_scaling"))
+        {
+            auto ropeScaling = jsonDeserializer.at("rope_scaling");
+
+            if (ropeScaling.contains("factor"))
+                RopeFactor = ropeScaling.at("factor").get<float>();
+
+            if (ropeScaling.contains("high_freq_factor"))
+                RopeHighFreq = ropeScaling.at("high_freq_factor").get<float>();
+
+            if (ropeScaling.contains("low_freq_factor"))
+                RopeLowFreq = ropeScaling.at("low_freq_factor").get<float>();
+
+            if (ropeScaling.contains("original_max_position_embeddings"))
+                RopeOrigMaxPos = ropeScaling.at("original_max_position_embeddings").get<int>();
+        }
 
         if (HiddenSize % NumHeads != 0)
             throw std::runtime_error("HiddenSize must be divisible by NumHeads");
 
         HeadDim = HiddenSize / NumHeads;
+
+        // Tokenizer config
+        std::filesystem::path modelTokenizerConfigFilePath = ModelPath;
+        modelTokenizerConfigFilePath = modelTokenizerConfigFilePath / "tokenizer_config.json";
+
+        if (!std::filesystem::exists(modelTokenizerConfigFilePath) || !std::filesystem::is_regular_file(modelTokenizerConfigFilePath))
+            throw std::runtime_error("File at Path (" + modelTokenizerConfigFilePath.string() + ") doesnt exist");
+
+        std::ifstream tokenizerConfigFileStream(modelTokenizerConfigFilePath);
+        tokenizerConfigFileStream >> jsonDeserializer;
+        
+        HasChatTemplate = jsonDeserializer.contains("chat_template");
+        BosTokenString = jsonDeserializer.at("bos_token").get<std::string>();
+        EosTokenString = jsonDeserializer.at("eos_token").get<std::string>();
     }
 
     Validate();

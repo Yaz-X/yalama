@@ -119,3 +119,15 @@ static void ShowProgressBar(float progress)
 
     std::cout.flush();
 }
+
+static std::string Replace(const std::string &input, const std::string &oldValue, const std::string &newValue)
+{
+    std::string result = input;
+
+    size_t pos = result.find(oldValue);
+
+    if (pos != std::string::npos)
+        result.replace(pos, oldValue.length(), newValue);
+
+    return result;
+}

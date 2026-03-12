@@ -14,11 +14,9 @@
 #include <string>
 #include <torch/torch.h>
 
-using hr_clock = std::chrono::high_resolution_clock;
+using hr_clock = std::chrono::steady_clock;
 
 static std::timed_mutex inferMutex;
-std::shared_ptr<Model> ChatSession::_sharedModel = nullptr;
-std::once_flag ChatSession::_modelInitFlag;
 std::regex ChatSession::_NewLineRegex = std::regex("Ċ");
 std::regex ChatSession::_NewLineRegex2 = std::regex("<br>");
 int ChatSession::_DecodeSafetyWindowToEmitTokens = 10;
@@ -39,32 +37,31 @@ ChatSession::ChatSession()
         }
     }
 
-    std::call_once(_modelInitFlag, []()
-                   { _sharedModel = std::make_shared<Model>(); });
-
-    _model = _sharedModel;
-
     if (_MaskedTokenIds.empty())
     {
         for (const auto &[id, token] : Tokenizer::GetSpecialTokens())
         {
-            if (token != "<|eot_id|>" &&
-                token != "<|eos|>" &&
-                token != "<|end_of_text|>")
+            bool isEos =
+                std::find(
+                    ConfigManager::EosIds.begin(),
+                    ConfigManager::EosIds.end(),
+                    id) != ConfigManager::EosIds.end();
+
+            if (!isEos)
             {
                 _MaskedTokenIds.push_back(id);
 
-                std::string specialToken = token;
-                specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '<'), specialToken.end());
-                specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '>'), specialToken.end());
-                specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '|'), specialToken.end());
-
-                auto textIds = Tokenizer::GetEncodedSpecialTokens()[specialToken];
-
-                for (auto tid : textIds)
-                {
-                    _MaskedTokenIds.push_back(tid);
-                }
+                // std::string specialToken = token;
+                // specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '<'), specialToken.end());
+                // specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '>'), specialToken.end());
+                // specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '|'), specialToken.end());
+                //
+                // auto textIds = Tokenizer::GetEncodedSpecialTokens()[specialToken];
+                //
+                // for (auto tid : textIds)
+                //{
+                //    _MaskedTokenIds.push_back(tid);
+                //}
             }
         }
     }
@@ -73,8 +70,6 @@ ChatSession::ChatSession()
     _MaskedTokenIds.erase(
         std::unique(_MaskedTokenIds.begin(), _MaskedTokenIds.end()),
         _MaskedTokenIds.end());
-
-    return;
 }
 
 GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<void(const std::string &)> onTokenDecoded, bool &isCancel)
@@ -123,10 +118,14 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
 
     if (generationResult.IsSuccess)
     {
+        TraceLogger::DumpLine("Max Sequence Length: " + std::to_string(ConfigManager::MaxSequenceLength));
+        TraceLogger::DumpLine("Tokens Length: " + std::to_string(_Tokens.size()));
+
         torch::Tensor next;
+
         input = torch::tensor(_Tokens, torch::kInt64).unsqueeze(0).to(torch::kCUDA);
 
-        _model->BeginInfer();
+        Model::BeginInfer();
 
         while (!end)
         {
@@ -138,9 +137,9 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
             }
             else
             {
-                startTime = std::chrono::high_resolution_clock::now();
+                startTime = hr_clock::now();
 
-                generationResult = _model->Infer(input, _EosPerPrompt);
+                generationResult = Model::Infer(input, _EosPerPrompt);
 
                 if (!generationResult.IsSuccess)
                     break;
@@ -151,7 +150,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
 
                 nextID = Sample(last, ConfigManager::IsGreedy.value() || generatedTokens == 0);
 
-                endTime = std::chrono::high_resolution_clock::now();
+                endTime = hr_clock::now();
 
                 if (generatedTokens > 0)
                 {
@@ -176,7 +175,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                 {
                     tokensEmitQueue.push_back(nextID);
 
-                    if (!Tokenizer::HasChatTemplate() &&
+                    if (!ConfigManager::HasChatTemplate &&
                         tokensHistory.size() > ConfigManager::MaxSequenceLength)
                     {
                         tokensHistory.erase(tokensHistory.begin());
@@ -212,7 +211,6 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                         }
                     }
 
-                    // non instruct model
                     if (emittedTokens > _DecodeSafetyWindowToEmitTokens)
                         end = IsRepeatDetected(tokensEmitQueue, tokensHistory);
 
@@ -222,7 +220,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                         {
                             EmitToken(tokensEmitQueue[0], emittedTokens, onTokenDecoded);
 
-                            if (!Tokenizer::HasChatTemplate())
+                            if (!ConfigManager::HasChatTemplate)
                                 tokensHistory.push_back(tokensEmitQueue[0]);
 
                             tokensEmitQueue.pop_front();
@@ -231,7 +229,11 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
 
                     if (!end)
                     {
-                        next = torch::tensor({nextID}, torch::kInt64).unsqueeze(0).to(torch::kCUDA);
+
+                        next = torch::tensor({nextID}, torch::TensorOptions()
+                                                           .dtype(torch::kInt64)
+                                                           .device(torch::kCUDA))
+                                   .unsqueeze(0);
 
                         if (!ConfigManager::IsKVCacheEnabled.value())
                             input = torch::cat({input, next}, 1);
@@ -256,7 +258,8 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
 
             double tps = (generatedTokens == 0 ? 0 : generatedTokens - 1) / (tokenTimes == 0 ? 1 : tokenTimes);
 
-            std::cout << "\nTokens Per Second: " << std::to_string(tps) << std::endl;
+            if (!ConfigManager::IsServicesRunMode.value() || (ConfigManager::IsServicesRunMode.value() && ConfigManager::IsServiceLoggingEnabled.value()))
+                std::cout << "\nTokens Per Second: " << std::to_string(tps) << std::endl;
         }
         else
         {
@@ -283,6 +286,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
 
 bool ChatSession::FormatInput(const std::string &openaiJson)
 {
+    std::string fullText;
     _Tokens.clear();
     _EosPerPrompt.clear();
 
@@ -302,17 +306,23 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
     {
         if (requestJson.contains("messages") == false)
         {
-            std::cout << "Invalid request: missing 'messages' field\n";
+            if (!ConfigManager::IsServicesRunMode.value() || (ConfigManager::IsServicesRunMode.value() && ConfigManager::IsServiceLoggingEnabled.value()))
+                std::cout << "Invalid request: missing 'messages' field\n";
+
             isValid = false;
         }
         else if (requestJson["messages"].is_array() == false)
         {
-            std::cout << "Invalid request: 'messages' must be an array\n";
+            if (!ConfigManager::IsServicesRunMode.value() || (ConfigManager::IsServicesRunMode.value() && ConfigManager::IsServiceLoggingEnabled.value()))
+                std::cout << "Invalid request: 'messages' must be an array\n";
+
             isValid = false;
         }
         else if (requestJson["messages"].empty())
         {
-            std::cout << "Invalid request: 'messages' cannot be empty\n";
+            if (!ConfigManager::IsServicesRunMode.value() || (ConfigManager::IsServicesRunMode.value() && ConfigManager::IsServiceLoggingEnabled.value()))
+                std::cout << "Invalid request: 'messages' cannot be empty\n";
+
             isValid = false;
         }
 
@@ -336,7 +346,7 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
             std::string assistantMessage;
 
             // if base model and non-instruct, take last prompt, no turn-in chat for it
-            if (!Tokenizer::HasChatTemplate())
+            if (!ConfigManager::HasChatTemplate)
             {
                 if (!messages.empty())
                 {
@@ -348,6 +358,7 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
 
             std::string errorMessage;
 
+            int messageIndex = 0;
             for (auto message : messages)
             {
 
@@ -382,24 +393,33 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
                 {
                     userMessage = message["content"];
 
-                    auto userTokens = Tokenizer::EncodeWithChatTemplate(userMessage, messages.size() == 1);
+                    fullText += ChatTemplateProvider::Format(userMessage, messageIndex == 0);
+
+                    auto userTokens = Tokenizer::EncodeWithChatTemplate(userMessage, messageIndex == 0);
                     _Tokens.insert(_Tokens.end(), userTokens.begin(), userTokens.end());
                 }
-                else if (message["role"] == "assistant" && Tokenizer::HasChatTemplate()) // only for instruct
+                else if (message["role"] == "assistant" && ConfigManager::HasChatTemplate) // only for instruct
                 {
                     assistantMessage = message["content"];
 
                     if (!assistantMessage.empty())
                     {
+                        fullText += assistantMessage;
+
                         auto assistantTokens = Tokenizer::EncodeWithoutChatTemplate(assistantMessage);
                         _Tokens.insert(_Tokens.end(), assistantTokens.begin(), assistantTokens.end());
 
                         if (std::find(
                                 ConfigManager::EosIds.begin(),
                                 ConfigManager::EosIds.end(),
-                                _Tokens.back()) != ConfigManager::EosIds.end())
+                                _Tokens.back()) == ConfigManager::EosIds.end())
                         {
-                            _Tokens.push_back(ConfigManager::EosIds.front());
+                            std::string eosString = ChatTemplateProvider::GetEOSTokenString();
+                            auto eosIds = Tokenizer::EncodeWithoutChatTemplate(eosString);
+
+                            fullText += eosString;
+
+                            _Tokens.insert(_Tokens.end(), eosIds.begin(), eosIds.end());
                         }
 
                         _EosPerPrompt.push_back(_Tokens.size() - 1);
@@ -422,6 +442,8 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
 
                     isValid = false;
                 }
+
+                messageIndex++;
             }
         }
 
@@ -432,6 +454,9 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
         }
     }
 
+    // std::cout << "Before Infer: " << fullText << std::endl
+    //           << std::endl
+    //           << std::flush;
     return isValid;
 }
 

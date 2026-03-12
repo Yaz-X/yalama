@@ -1,16 +1,16 @@
 {
     "model": "",
     "logs":"",
-    "serviceMode":1,
+    "serviceMode":false,
     "httpThreadsPoolSize":32,
-    "showloadedweights" : false,
-    "port":"5067",
+    "showloadedweights": false,
+    "port":5067,
     "debug": false,
     "isServiceLoggingEnabled": false,
     "isTorchValidationsEnabled": false,
     "isKVCacheEnabled": true,
-    "kvCacheSizeInGB": 2,
-    "isGreedy": false,
+    "kvCacheSizeInGB": 6,
+    "isGreedy": true,
     "topk": 40,
     "temp": 0.6
     

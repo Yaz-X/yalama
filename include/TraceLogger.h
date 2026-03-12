@@ -58,7 +58,7 @@ public:
             else
                 return;
 
-            for (int m = 0; m <= numOfTokensToLog; m++)
+            for (int m = 0; m <= 10; m++)
             {
 
                 if (x.dim() == 4)

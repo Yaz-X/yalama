@@ -54,6 +54,10 @@ target_sources(yalama PRIVATE ${SRC})
 
 
 target_include_directories(yalama PRIVATE include)
+target_include_directories(yalama PRIVATE include/models)
+target_include_directories(yalama PRIVATE include/tokenizer)
+target_include_directories(yalama PRIVATE include/enums)
+target_include_directories(yalama PRIVATE include/chat_templates)
 target_include_directories(yalama PRIVATE src/services/openAI)
 target_include_directories(yalama PRIVATE extern)
 set_target_properties(yalama PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

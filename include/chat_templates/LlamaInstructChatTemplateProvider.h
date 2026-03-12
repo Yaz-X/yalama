@@ -25,7 +25,11 @@ public:
             << "<|eot_id|>"
             << "<|start_header_id|>assistant<|end_header_id|>\n\n";
 
-        
         return chatTemplate.str();
+    }
+
+    std::string GetEOSTokenString() override
+    {
+        return ConfigManager::EosTokenString;
     }
 };

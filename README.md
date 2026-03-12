@@ -192,11 +192,11 @@ Important:
 ```json
 {
   "model": "~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct",
-  "logs":"~/yalama_logs",
-  "serviceMode":1,
+  "logs":"~/yalama_logs",  
+  "serviceMode":true,
   "httpThreadsPoolSize":32,
-  "showloadedweights" : false,
-  "port":"5067",
+  "showloadedweights": false,
+  "port":5067,
   "debug": false,
   "isServiceLoggingEnabled": false,
   "isTorchValidationsEnabled": false,

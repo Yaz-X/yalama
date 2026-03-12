@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ModelType.h"
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -12,6 +13,7 @@ public:
     static void Load(std::string configFolderPath);
 
     // Model Configs
+    inline static ModelType ModelLoadedType = ModelType::None;
     inline static int NumLayers = 0;
     inline static int HiddenSize = 0;
     inline static int NumHeads = 0;
@@ -26,6 +28,9 @@ public:
     inline static int RopeOrigMaxPos = 0;
     inline static int MaxSequenceLength = 0;
     inline static std::vector<int64_t> EosIds;
+    inline static std::string EosTokenString;
+    inline static std::string BosTokenString;
+    inline static bool HasChatTemplate = false;
 
     // yalama Configs
     inline static std::string ModelPath = "";

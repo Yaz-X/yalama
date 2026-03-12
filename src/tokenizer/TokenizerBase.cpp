@@ -1,4 +1,4 @@
-#include "Tokenizer.h"
+#include "TokenizerBase.h"
 #include "ConfigManager.h"
 #include <json.hpp>
 #include <fstream>
@@ -7,18 +7,13 @@
 
 using json = nlohmann::json;
 
-void Tokenizer::Init()
+void TokenizerBase::Init()
 {
     LoadFromJson();
     _bpeCache.reserve(50000);
 }
 
-bool Tokenizer::HasChatTemplate()
-{
-    return _hasChatTemplate;
-}
-
-std::unordered_map<int, std::string> Tokenizer::BuildByteEncoder()
+std::unordered_map<int, std::string> TokenizerBase::BuildByteEncoder()
 {
     std::unordered_map<int, std::string> result;
 
@@ -69,19 +64,14 @@ std::unordered_map<int, std::string> Tokenizer::BuildByteEncoder()
     return result;
 }
 
-void Tokenizer::LoadFromJson()
+void TokenizerBase::LoadFromJson()
 {
     std::filesystem::path modelTokenizerFilePath = ConfigManager::ModelPath;
-    std::filesystem::path modelTokenizerConfigFilePath = ConfigManager::ModelPath;
 
     modelTokenizerFilePath = modelTokenizerFilePath / "tokenizer.json";
-    modelTokenizerConfigFilePath = modelTokenizerConfigFilePath / "tokenizer_config.json";
 
     if (!std::filesystem::exists(modelTokenizerFilePath) || !std::filesystem::is_regular_file(modelTokenizerFilePath))
         throw std::runtime_error("File at Path (" + modelTokenizerFilePath.string() + ") doesnt exist");
-
-    if (!std::filesystem::exists(modelTokenizerConfigFilePath) || !std::filesystem::is_regular_file(modelTokenizerConfigFilePath))
-        throw std::runtime_error("File at Path (" + modelTokenizerConfigFilePath.string() + ") doesnt exist");
 
     std::string path = modelTokenizerFilePath.string();
 
@@ -105,22 +95,29 @@ void Tokenizer::LoadFromJson()
     {
         if (tok.contains("special") &&
             tok["special"].get<bool>() == true &&
-            tok["content"].get<std::string>().rfind("<|", 0) == 0)
+            tok.contains("content"))
         {
             int id = tok["id"].get<int>();
             std::string content = tok["content"].get<std::string>();
 
-            _specialTokens[id] = content;
-            _idToToken[id] = content;
-            _vocab[content] = id;
+            if (content.find_first_of("\x00\x01\x02\x03\x04\x05\x06\x07") == std::string::npos &&
+                content.rfind("<|reserved_special_token", 0) != 0 &&
+                content.rfind("[control_", 0) != 0)
+            {
+                _specialTokens[id] = content;
+                _idToToken[id] = content;
+                _vocab[content] = id;
+            }
         }
     }
 
-    _specialTokens[_vocab["<|eot_id|>"]] = "<|eot_id|>";
-    _specialTokens[_vocab["<|end_of_text|>"]] = "<|end_of_text|>";
-
-    _idToToken[_vocab["<|eot_id|>"]] = "<|eot_id|>";
-    _idToToken[_vocab["<|end_of_text|>"]] = "<|end_of_text|>";
+    std::cout << "Special Tokens Count: " << _specialTokens.size() << std::endl
+              << std::flush;
+    for (auto &[id, token] : _specialTokens)
+    {
+        std::cout << "SPECIAL TOKEN: " << id << " -> " << token << std::endl
+                  << std::flush;
+    }
 
     _byteEncoder = BuildByteEncoder();
     _byteFallbackVocab.reserve(256);
@@ -136,22 +133,31 @@ void Tokenizer::LoadFromJson()
 
     for (auto &kv : _byteEncoder)
     {
+        unsigned char byte = kv.first;
         std::string token = kv.second;
 
-        auto it = _vocab.find(token);
-
-        if (it != _vocab.end())
+        if (byte >= 128)
         {
-            // performance optimization: fast lookup for byte tokens instead of full vocab search
-            _byteFallbackVocab[token] = it->second;
+            auto it = _vocab.find(token);
+
+            if (it != _vocab.end())
+            {
+                _byteFallbackVocab[token] = it->second;
+            }
         }
     }
 
     _decoderRules.emplace_back(std::regex("Ġ"), " ");
     _decoderRules.emplace_back(std::regex("Ċ"), "\n");
+    _decoderRules.emplace_back(std::regex("<0x0A>"), "\n");
     _decoderRules.emplace_back(std::regex("ĊĊ"), "\n\n");
     _decoderRules.emplace_back(std::regex("Ċ([0-9])"), "\n$1");
     _decoderRules.emplace_back(std::regex("<\\|[^>]*\\|>"), "");
+    _decoderRules.emplace_back(std::regex("\xE2\x96\x81"), " ");
+    _decoderRules.emplace_back(std::regex("\xEF\xBF\xBD"), "");
+    _decoderRules.emplace_back(std::regex("\xC4"), "");
+    _decoderRules.emplace_back(std::regex("\xA0"), " ");
+    _decoderRules.emplace_back(std::regex(" {2,}"), " ");
 
     auto merges = json["model"]["merges"];
     _mergeRanks.reserve(merges.size());
@@ -174,21 +180,14 @@ void Tokenizer::LoadFromJson()
 
     std::cout << "Tokenizer vocab loaded: " << _vocab.size() << std::endl;
 
-    path = modelTokenizerConfigFilePath.string();
-
-    std::ifstream tokenizerConfigFileStream(path);
-    json = nlohmann::json::parse(tokenizerConfigFileStream);
-
-    _hasChatTemplate = json.contains("chat_template");
-
-    //Create a cash for encoded special tokens
+    // Create a cash for encoded special tokens
     for (auto &[id, token] : _specialTokens)
-    {        
+    {
         _encodedSpecialTokens[token] = EncodeWithoutChatTemplate(token);
     }
 }
 
-std::vector<std::string> Tokenizer::LlamaSplit(const std::string &text)
+std::vector<std::string> TokenizerBase::SplitText(const std::string &text)
 {
     std::vector<std::string> result;
     std::string current;
@@ -243,7 +242,7 @@ std::vector<std::string> Tokenizer::LlamaSplit(const std::string &text)
     return result;
 }
 
-std::string Tokenizer::ByteToToken(unsigned char c)
+std::string TokenizerBase::ByteToToken(unsigned char c)
 {
     std::string value;
     auto it = _byteEncoder.find(c);
@@ -256,7 +255,7 @@ std::string Tokenizer::ByteToToken(unsigned char c)
     return value;
 }
 
-std::vector<std::string> Tokenizer::ApplyBPE(const std::vector<std::string> &inputChars)
+std::vector<std::string> TokenizerBase::ApplyBPE(const std::vector<std::string> &inputChars)
 {
     std::vector<std::string> result;
 
@@ -412,7 +411,17 @@ std::vector<std::string> Tokenizer::ApplyBPE(const std::vector<std::string> &inp
     return result;
 }
 
-std::vector<int64_t> Tokenizer::Encode(std::string &text, bool isApplyChatTemplate, bool isAddSystemHeaderInChatTemplate)
+std::vector<int64_t> TokenizerBase::EncodeWithChatTemplate(std::string &text, bool isAddSystemHeaderInChatTemplate)
+{
+    return Encode(text, true, isAddSystemHeaderInChatTemplate);
+}
+
+std::vector<int64_t> TokenizerBase::EncodeWithoutChatTemplate(std::string &text)
+{
+    return Encode(text);
+}
+
+std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTemplate, bool isAddSystemHeaderInChatTemplate)
 {
     std::string input = text;
 
@@ -420,8 +429,6 @@ std::vector<int64_t> Tokenizer::Encode(std::string &text, bool isApplyChatTempla
     {
         input = ChatTemplateProvider::Format(text, isAddSystemHeaderInChatTemplate);
     }
-
-    std::vector<std::string> tokens;
 
     std::string encodedInput;
 
@@ -431,78 +438,13 @@ std::vector<int64_t> Tokenizer::Encode(std::string &text, bool isApplyChatTempla
         encodedInput += ByteToToken(c);
     }
 
-    std::vector<std::string> allPiecesAfterSegmentation;
+    std::vector<std::string> allPiecesAfterSegmentation = SegmentInput(encodedInput);
 
-    size_t segmentStart = 0;
-    size_t segmentEnd = 0;
-    std::string before;
-    std::string specialToken;
-    bool isDoneSegmentation = false;
-
-    std::vector<std::string> split;
-
-    while (!encodedInput.empty())
-    {
-        split.clear();
-        specialToken.clear();
-        before.clear();
-        segmentStart = 0;
-        segmentEnd = 0;
-
-        segmentStart = encodedInput.find("<|", 0);
-
-        if (segmentStart == std::string::npos)
-        {
-            split = LlamaSplit(encodedInput);
-            encodedInput.clear();
-        }
-        else
-        {
-            before = encodedInput.substr(0, segmentStart);
-
-            segmentEnd = encodedInput.find("|>", segmentStart);
-
-            if (segmentEnd != std::string::npos)
-                segmentEnd += 2;
-
-            // if this is a damaged/invlid special token like <|.... without |>, then find the next proper <|... token
-            // if found, split the text till the valid special token, split it like normal text, if no remaining special tokens
-            //  then do nothing and the next turn in loop
-            if (segmentEnd == std::string::npos)
-            {
-                auto nextSegmentStart = encodedInput.find("<|", segmentStart + 2);
-
-                if (nextSegmentStart != std::string::npos)
-                    segmentEnd = nextSegmentStart;
-            }
-
-            if (segmentEnd != std::string::npos)
-            {
-                specialToken = encodedInput.substr(segmentStart, (segmentEnd - segmentStart));
-
-                if (!before.empty())
-                    split = LlamaSplit(before);
-
-                encodedInput = encodedInput.substr(segmentEnd);
-            }
-            else
-            {
-                encodedInput = encodedInput.substr(segmentStart);
-                split = LlamaSplit(encodedInput);
-                encodedInput.clear();
-            }
-        }
-
-        if (!split.empty())
-            allPiecesAfterSegmentation.insert(allPiecesAfterSegmentation.end(), split.begin(), split.end());
-
-        if (!specialToken.empty())
-            allPiecesAfterSegmentation.push_back(specialToken);
-    }
+    std::vector<std::string> tokens;
 
     for (auto &piece : allPiecesAfterSegmentation)
     {
-        if (_vocab.find(piece) != _vocab.end() || piece.find("<|") == 0)
+        if (_vocab.find(piece) != _vocab.end())
         {
             tokens.push_back(piece);
         }
@@ -511,11 +453,10 @@ std::vector<int64_t> Tokenizer::Encode(std::string &text, bool isApplyChatTempla
             if (!piece.empty())
             {
                 std::vector<std::string> chars;
-                std::string encoded = piece;
 
-                for (size_t i = 0; i < encoded.size();)
+                for (size_t i = 0; i < piece.size();)
                 {
-                    unsigned char c = encoded[i];
+                    unsigned char c = piece[i];
 
                     size_t len = 1;
 
@@ -528,7 +469,7 @@ std::vector<int64_t> Tokenizer::Encode(std::string &text, bool isApplyChatTempla
                     else if ((c & 0xF8) == 0xF0)
                         len = 4;
 
-                    chars.push_back(encoded.substr(i, len));
+                    chars.push_back(piece.substr(i, len));
                     i += len;
                 }
 
@@ -543,7 +484,7 @@ std::vector<int64_t> Tokenizer::Encode(std::string &text, bool isApplyChatTempla
 
     for (auto &token : tokens)
     {
-        if (token.empty() == false)
+        if (!token.empty())
         {
             auto vocabKV = _vocab.find(token);
 
@@ -586,19 +527,72 @@ std::vector<int64_t> Tokenizer::Encode(std::string &text, bool isApplyChatTempla
     return ids;
 }
 
-std::vector<int64_t> Tokenizer::EncodeWithChatTemplate(std::string &text, bool isAddSystemHeaderInChatTemplate)
+std::vector<std::string> TokenizerBase::SegmentInput(std::string &encodedInput)
 {
-    return Encode(text, true, isAddSystemHeaderInChatTemplate);
+    std::vector<std::string> allPiecesAfterSegmentation;
+
+    size_t segmentStart = 0;
+    size_t segmentEnd = 0;
+
+    std::string before;
+    std::string specialToken;
+
+    std::vector<std::string> split;
+
+    while (!encodedInput.empty())
+    {
+        split.clear();
+        specialToken.clear();
+        before.clear();
+
+        segmentStart = std::string::npos;
+        segmentEnd = std::string::npos;
+
+        for (auto &[id, token] : _specialTokens)
+        {
+            size_t pos = encodedInput.find(token);
+
+            if (pos != std::string::npos)
+            {
+                if (segmentStart == std::string::npos || pos < segmentStart)
+                {
+                    segmentStart = pos;
+                    specialToken = token;
+                }
+            }
+        }
+
+        if (segmentStart == std::string::npos)
+        {
+            split = SplitText(encodedInput);
+            encodedInput.clear();
+        }
+        else
+        {
+            before = encodedInput.substr(0, segmentStart);
+
+            segmentEnd = segmentStart + specialToken.length();
+
+            if (!before.empty())
+                split = SplitText(before);
+
+            encodedInput = encodedInput.substr(segmentEnd);
+        }
+
+        if (!split.empty())
+            allPiecesAfterSegmentation.insert(allPiecesAfterSegmentation.end(), split.begin(), split.end());
+
+        if (!specialToken.empty())
+            allPiecesAfterSegmentation.push_back(specialToken);
+    }
+
+    return allPiecesAfterSegmentation;
 }
 
-std::vector<int64_t> Tokenizer::EncodeWithoutChatTemplate(std::string &text)
-{
-    return Encode(text);
-}
-
-std::string Tokenizer::Decode(const std::vector<int64_t> &ids)
+std::string TokenizerBase::Decode(const std::vector<int64_t> &ids)
 {
     std::ostringstream builder;
+    bool isSpecial = false;
     bool stopDecoding = false;
 
     for (auto id : ids)
@@ -623,18 +617,12 @@ std::string Tokenizer::Decode(const std::vector<int64_t> &ids)
             if (!stopDecoding)
             {
                 std::string tokenValue = tokenIt->second;
-                if (isSpecial == false)
-                {
-                    bool needsDecode =
-                        tokenValue.find("Ġ") != std::string::npos ||
-                        tokenValue.find("Ċ") != std::string::npos;
 
-                    if (needsDecode)
+                if (!isSpecial)
+                {
+                    for (auto &[pattern, repl] : _decoderRules)
                     {
-                        for (auto &[pattern, repl] : _decoderRules)
-                        {
-                            tokenValue = std::regex_replace(tokenValue, pattern, repl);
-                        }
+                        tokenValue = std::regex_replace(tokenValue, pattern, repl);
                     }
                 }
 
@@ -653,13 +641,16 @@ std::string Tokenizer::Decode(const std::vector<int64_t> &ids)
                     else if ((c & 0xF8) == 0xF0)
                         len = 4;
 
+                    // garbage shit like ▁Ä
+                    if (i + len > tokenValue.size())
+                        break;
+
                     std::string piece = tokenValue.substr(i, len);
 
-                    auto it = _byteDecoder.find(piece);
-
-                    if (it != _byteDecoder.end())
+                    if (_byteFallbackVocab.find(piece) != _byteFallbackVocab.end())
                     {
-                        builder << static_cast<char>(it->second);
+                        auto it = _byteDecoder.find(piece);
+                        builder.write(reinterpret_cast<const char *>(&it->second), 1);
                     }
                     else
                     {
@@ -675,15 +666,26 @@ std::string Tokenizer::Decode(const std::vector<int64_t> &ids)
             break;
     }
 
-    return builder.str();
+    auto decoded = builder.str();
+
+    if (!isSpecial)
+    {
+        for (auto &[pattern, repl] : _decoderRules)
+        {
+            decoded = std::regex_replace(decoded, pattern, repl);
+        }
+    }
+
+    
+    return decoded;
 }
 
-std::unordered_map<int, std::string> Tokenizer::GetSpecialTokens()
+std::unordered_map<int, std::string> TokenizerBase::GetSpecialTokens()
 {
     return _specialTokens;
 }
 
-std::unordered_map<std::string, std::vector<int64_t>> Tokenizer::GetEncodedSpecialTokens()
+std::unordered_map<std::string, std::vector<int64_t>> TokenizerBase::GetEncodedSpecialTokens()
 {
     return _encodedSpecialTokens;
 }

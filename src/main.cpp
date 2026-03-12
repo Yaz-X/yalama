@@ -7,7 +7,6 @@
 #include "Helpers.h"
 #include "ChatSession.h"
 #include "ConfigManager.h"
-#include "RuntimeEnvironment.h"
 #include "Constants.h"
 #include <OpenAIService.h>
 #include <string>
@@ -65,7 +64,7 @@ std::string ParseArgs(int argsCount, char **args)
 
             i++;
         }
-        else if (arg == "--serviceMode" && i + 1 < argsCount)
+        else if (arg == "--servicemode" && i + 1 < argsCount)
         {
             std::string value = Trim(args[i + 1]);
             std::ostringstream loadedMsg;
@@ -86,7 +85,7 @@ std::string ParseArgs(int argsCount, char **args)
 
             i++;
         }
-        else if (arg == "--httpThreadsPoolSize" && i + 1 < argsCount)
+        else if (arg == "--httpthreadspoolsize" && i + 1 < argsCount)
         {
             try
             {
@@ -174,7 +173,7 @@ std::string ParseArgs(int argsCount, char **args)
             }
 
             i++;
-        }
+        } 
         else if (arg == "--isserviceloggingenabled" && i + 1 < argsCount)
         {
             try
@@ -397,6 +396,7 @@ int main(int argsCount, char **args)
     nlohmann::json messages = nlohmann::json::array();
     std::string assistantResponse;
 
+    Model::Init();
     ChatSession session;
 
     std::string modeString = ConfigManager::IsServicesRunMode.value() ? "OpenAI Compatible Services" : "REPL";
@@ -420,13 +420,13 @@ int main(int argsCount, char **args)
     std::signal(SIGINT, [](int)
                 { TermSignalHandler(); });
 
+    std::cout << "Model is running..." << std::endl
+              << std::flush;
+
     if (ConfigManager::IsServicesRunMode.value())
     {
 
         OpenAIService::Start(ConfigManager::ServicePort);
-
-        std::cout << "Model is running..." << std::endl
-                  << std::flush;
     }
     else
     {

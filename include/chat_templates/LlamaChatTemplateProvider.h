@@ -10,12 +10,15 @@ public:
         std::ostringstream chatTemplate;
 
         chatTemplate
-            << "<|begin_of_text|>"
-            << "**question**:"
-            << text
-            << "\n\n"
-            << "**answer**:";
+            << "<|begin_of_text|>"         
+            << text;
             
         return chatTemplate.str();
     }
+
+    std::string GetEOSTokenString() override
+    {
+        return ConfigManager::EosTokenString;
+    }    
+
 };

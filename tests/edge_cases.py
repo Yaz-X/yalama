@@ -92,7 +92,7 @@ def rapid_requests():
     for i in range(10):
         payload = {
             "messages": [
-                {"role": "user", "content": f"Test request {i}"}
+                {"role": "user", "content": f"gravity is"}
             ]
         }
 
