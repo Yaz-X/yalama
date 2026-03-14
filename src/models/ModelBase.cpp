@@ -21,10 +21,7 @@ void ModelBase::Load()
 
     if (!_Weights.empty())
         return;
-
-    std::cout << "Load Called..." << std::endl
-              << std::flush;
-
+    
     std::filesystem::path modelPath = ConfigManager::ModelPath;
 
     if (!std::filesystem::exists(modelPath) || !std::filesystem::is_directory(modelPath))

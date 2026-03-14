@@ -274,6 +274,7 @@ docker image prune -f
 
 ```bash
 docker run -it --gpus all \
+--rm --name yalama \
 -p 5067:5067 \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/model \
 yalama:latest /app/yalama --model /model
@@ -285,6 +286,7 @@ yalama:latest /app/yalama --model /model
 
 ```bash
 docker run -it --gpus all \
+--rm --name yalama \
 -p 8080:8080 \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/model \
 -v ~/yalama_config:/config \
