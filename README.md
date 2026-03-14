@@ -249,6 +249,7 @@ Run:
 
 ```bash
 docker run -it --gpus all \
+--rm --name yalama \
 -p 5067:5067 \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/model \
 ghcr.io/yaz-x/yalama:latest /app/yalama --model /model
@@ -315,6 +316,7 @@ Container supports the **same CLI arguments as native execution**.
 
 ```bash
 docker run -it --gpus all \
+--rm --name yalama \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/models \
 yalama:linux --model /models --serviceMode 0
 ```
