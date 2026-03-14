@@ -173,7 +173,7 @@ std::string ParseArgs(int argsCount, char **args)
             }
 
             i++;
-        } 
+        }
         else if (arg == "--isserviceloggingenabled" && i + 1 < argsCount)
         {
             try
@@ -357,6 +357,7 @@ void TermSignalHandler()
 
 int main(int argsCount, char **args)
 {
+
     std::string modelArgMissing = R"(Missing required Model HF SafeTensors Path argument or path for --model <Path> doesnt exist. Use --model <path>, if using default HF download location then it will be 
         ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct/snapshots/[SNAP_SHOT_HASH])";
 
@@ -395,8 +396,9 @@ int main(int argsCount, char **args)
 
     nlohmann::json messages = nlohmann::json::array();
     std::string assistantResponse;
-
+   
     Model::Init();
+
     ChatSession session;
 
     std::string modeString = ConfigManager::IsServicesRunMode.value() ? "OpenAI Compatible Services" : "REPL";

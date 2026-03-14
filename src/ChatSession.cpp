@@ -175,8 +175,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                 {
                     tokensEmitQueue.push_back(nextID);
 
-                    if (!ConfigManager::HasChatTemplate &&
-                        tokensHistory.size() > ConfigManager::MaxSequenceLength)
+                    if (tokensHistory.size() > ConfigManager::MaxSequenceLength)
                     {
                         tokensHistory.erase(tokensHistory.begin());
                     }
@@ -218,10 +217,11 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                     {
                         if (!end)
                         {
-                            EmitToken(tokensEmitQueue[0], emittedTokens, onTokenDecoded);
+                            int64_t token = tokensEmitQueue[0];
 
-                            if (!ConfigManager::HasChatTemplate)
-                                tokensHistory.push_back(tokensEmitQueue[0]);
+                            EmitToken(token, emittedTokens, onTokenDecoded);
+
+                            tokensHistory.push_back(tokensEmitQueue[0]);
 
                             tokensEmitQueue.pop_front();
                         }
@@ -250,9 +250,13 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
         {
             if (!tokensEmitQueue.empty())
             {
-                for (auto nextID : tokensEmitQueue)
+                int64_t token;
+              
+                for (size_t i = 0; i < tokensEmitQueue.size(); ++i)
                 {
-                    EmitToken(nextID, emittedTokens, onTokenDecoded);
+                    token = tokensEmitQueue[i];
+              
+                    EmitToken(token, emittedTokens, onTokenDecoded);
                 }
             }
 
@@ -453,17 +457,15 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
             std::cout << "Invalid OpenAI request: input produced zero tokens, Ensure at least one user message with non-empty content...";
         }
     }
+   
 
-    // std::cout << "Before Infer: " << fullText << std::endl
-    //           << std::endl
-    //           << std::flush;
     return isValid;
 }
 
 bool ChatSession::IsRepeatDetected(std::deque<int64_t> &tokensEmitQueue, const std::vector<int64_t> &tokensHistory)
 {
     bool isLoop = false;
-    size_t firstMatchedTokenPos = -1;
+    size_t firstMatchedTokenPos = static_cast<size_t>(-1);
 
     if (tokensEmitQueue.size() >= _DecodeSafetyWindowToEmitTokens &&
         tokensHistory.size() >= _DecodeSafetyWindowToEmitTokens &&
@@ -509,12 +511,15 @@ bool ChatSession::IsRepeatDetected(std::deque<int64_t> &tokensEmitQueue, const s
     return isLoop;
 }
 
-void ChatSession::EmitToken(const int64_t &nextID, int &emittedTokensCount, const std::function<void(const std::string &)> &onTokenDecoded)
+void ChatSession::EmitToken(const int64_t &tokenID, int &emittedTokensCount, const std::function<void(const std::string &)> &onTokenDecoded)
 {
-    auto decoded = Tokenizer::Decode({nextID});
+    auto decoded = Tokenizer::Decode(tokenID);
 
     decoded = std::regex_replace(decoded, _NewLineRegex, "\n");
     decoded = std::regex_replace(decoded, _NewLineRegex2, "\n");
+
+    if (!IsValidUTF8(decoded))
+        decoded = "�";
 
     onTokenDecoded(decoded);
 

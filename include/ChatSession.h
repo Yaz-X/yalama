@@ -16,13 +16,15 @@ private:
     static std::regex _NewLineRegex;
     static std::regex _NewLineRegex2;
     static int _DecodeSafetyWindowToEmitTokens;
+    
     std::shared_ptr<Model> _model;
     std::vector<int64_t> _Tokens;
     std::vector<int> _EosPerPrompt;
     std::vector<int64_t> _MaskedTokenIds;
-
-    void EmitToken(const int64_t &nextID, int &emittedTokensCount, const std::function<void(const std::string &)> &onTokenDecoded);
+    
+    void EmitToken(const int64_t &tokenID, int &emittedTokensCount, const std::function<void(const std::string &)> &onTokenDecoded);
     bool IsRepeatDetected(std::deque<int64_t> &tokenQueue, const std::vector<int64_t> &stopSeq);
+    bool IsReaptedStringDetected(std::deque<std::string> &tokensEmitQueue, const std::vector<std::string> &tokensHistory);
     bool FormatInput(const std::string &openaiJson);    
     int64_t Sample(torch::Tensor &lastLogitsToken, bool isGreedy);
 };

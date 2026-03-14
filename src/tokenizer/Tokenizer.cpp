@@ -34,9 +34,9 @@ std::vector<int64_t> Tokenizer::EncodeWithoutChatTemplate(std::string &text)
     return _tokenizer->EncodeWithoutChatTemplate(text);
 }
 
-std::string Tokenizer::Decode(const std::vector<int64_t> &ids)
+std::string Tokenizer::Decode(const int64_t tokenID)
 {
-    return _tokenizer->Decode(ids);
+    return _tokenizer->Decode(tokenID);
 }
 
 std::unordered_map<int, std::string> Tokenizer::GetSpecialTokens()

@@ -131,3 +131,83 @@ static std::string Replace(const std::string &input, const std::string &oldValue
 
     return result;
 }
+
+static void ReplaceAll(std::string &str, const std::string &from, const std::string &to)
+{
+    size_t pos = 0;
+
+    while ((pos = str.find(from, pos)) != std::string::npos)
+    {
+        str.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+}
+
+static void CleanIncompleteUTF8(std::string &s)
+{
+    if (s.empty())
+        return;
+
+    int len = s.size();
+    int check = std::min(4, len);
+
+    for (int i = 1; i <= check; i++)
+    {
+        unsigned char c = s[len - i];
+
+        // ASCII
+        if ((c & 0x80) == 0)
+            return;
+
+        // start of UTF8 sequence
+        if ((c & 0xC0) == 0xC0)
+        {
+            int expected = 0;
+
+            if ((c & 0xE0) == 0xC0)
+                expected = 2;
+            else if ((c & 0xF0) == 0xE0)
+                expected = 3;
+            else if ((c & 0xF8) == 0xF0)
+                expected = 4;
+
+            int actual = i;
+
+            if (actual < expected)
+                s.resize(len - actual);
+
+            return;
+        }
+    }
+}
+
+static bool IsValidUTF8(const std::string& s)
+{
+    int remaining = 0;
+
+    for (unsigned char c : s)
+    {
+        if (remaining == 0)
+        {
+            if ((c >> 7) == 0b0)          // 1 byte (ASCII)
+                continue;
+            else if ((c >> 5) == 0b110)   // 2 bytes
+                remaining = 1;
+            else if ((c >> 4) == 0b1110)  // 3 bytes
+                remaining = 2;
+            else if ((c >> 3) == 0b11110) // 4 bytes
+                remaining = 3;
+            else
+                return false;
+        }
+        else
+        {
+            if ((c >> 6) != 0b10)
+                return false;
+
+            remaining--;
+        }
+    }
+
+    return remaining == 0;
+}

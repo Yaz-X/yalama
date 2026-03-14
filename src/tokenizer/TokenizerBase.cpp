@@ -3,6 +3,7 @@
 #include <json.hpp>
 #include <fstream>
 #include <iostream>
+#include "Helpers.h"
 #include "ChatTemplateProvider.h"
 
 using json = nlohmann::json;
@@ -132,35 +133,20 @@ void TokenizerBase::LoadFromJson()
         std::string token = kv.second;
 
         _byteDecoder[token] = byte;
-    }
 
-    for (auto &kv : _byteEncoder)
-    {
-        unsigned char byte = kv.first;
-        std::string token = kv.second;
-
-        if (byte >= 128)
+        if (_IsByteFallbackEnabled)
         {
             auto it = _vocab.find(token);
 
             if (it != _vocab.end())
             {
+                // performance optimization: fast lookup for byte tokens instead of full vocab search
                 _byteFallbackVocab[token] = it->second;
             }
         }
     }
 
-    _decoderRules.emplace_back(std::regex("Ġ"), " ");
-    _decoderRules.emplace_back(std::regex("Ċ"), "\n");
-    _decoderRules.emplace_back(std::regex("<0x0A>"), "\n");
-    _decoderRules.emplace_back(std::regex("ĊĊ"), "\n\n");
-    _decoderRules.emplace_back(std::regex("Ċ([0-9])"), "\n$1");
-    _decoderRules.emplace_back(std::regex("<\\|[^>]*\\|>"), "");
-    _decoderRules.emplace_back(std::regex("\xE2\x96\x81"), " ");
-    _decoderRules.emplace_back(std::regex("\xEF\xBF\xBD"), "");
-    _decoderRules.emplace_back(std::regex("\xC4"), "");
-    _decoderRules.emplace_back(std::regex("\xA0"), " ");
-    _decoderRules.emplace_back(std::regex(" {2,}"), " ");
+    BuildDecoderRules();
 
     auto merges = json["model"]["merges"];
     _mergeRanks.reserve(merges.size());
@@ -188,6 +174,15 @@ void TokenizerBase::LoadFromJson()
     {
         _encodedSpecialTokens[token] = EncodeWithoutChatTemplate(token);
     }
+}
+
+void TokenizerBase::BuildDecoderRules()
+{
+    _postDecoderRules.emplace_back(std::regex("Ġ"), " ");
+    _postDecoderRules.emplace_back(std::regex("Ċ"), "\n");
+    _postDecoderRules.emplace_back(std::regex("ĊĊ"), "\n\n");
+    _postDecoderRules.emplace_back(std::regex("Ċ([0-9])"), "\n$1");
+    _postDecoderRules.emplace_back("Ġ", " ");
 }
 
 std::vector<std::string> TokenizerBase::SplitText(const std::string &text)
@@ -433,15 +428,74 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
         input = ChatTemplateProvider::Format(text, isAddSystemHeaderInChatTemplate);
     }
 
-    std::string encodedInput;
-
-    for (size_t i = 0; i < input.size(); ++i)
+    if (ConfigManager::IsDebuggingEnabled.value())
     {
-        unsigned char c = static_cast<unsigned char>(input[i]);
-        encodedInput += ByteToToken(c);
+        size_t i = 0;
+
+        std::cout << "Before:";
+
+        while (i < input.size())
+        {
+            unsigned char c = static_cast<unsigned char>(input[i]);
+
+            size_t len = 1;
+
+            if ((c & 0x80) == 0)
+                len = 1;
+            else if ((c & 0xE0) == 0xC0)
+                len = 2;
+            else if ((c & 0xF0) == 0xE0)
+                len = 3;
+            else if ((c & 0xF8) == 0xF0)
+                len = 4;
+
+            std::cout << " [" << input.substr(i, len) << "] ";
+
+            i += len;
+        }
+
+        std::cout << std::endl;
+    }
+
+    std::string encodedInput = EncodeBytes(input);
+
+    if (ConfigManager::IsDebuggingEnabled.value())
+    {
+        std::cout << "After:";
+
+        size_t i = 0;
+        while (i < encodedInput.size())
+        {
+            unsigned char c = static_cast<unsigned char>(encodedInput[i]);
+
+            size_t len = 1;
+
+            if ((c & 0x80) == 0)
+                len = 1;
+            else if ((c & 0xE0) == 0xC0)
+                len = 2;
+            else if ((c & 0xF0) == 0xE0)
+                len = 3;
+            else if ((c & 0xF8) == 0xF0)
+                len = 4;
+
+            std::cout << " [" << encodedInput.substr(i, len) << "] ";
+
+            i += len;
+        }
+
+        std::cout << std::endl;
     }
 
     std::vector<std::string> allPiecesAfterSegmentation = SegmentInput(encodedInput);
+
+    if (ConfigManager::IsDebuggingEnabled.value())
+    {
+        for (auto &p : allPiecesAfterSegmentation)
+        {
+            std::cout << "SEG: " << p << std::endl;
+        }
+    }
 
     std::vector<std::string> tokens;
 
@@ -476,6 +530,16 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
                     i += len;
                 }
 
+                if (ConfigManager::IsDebuggingEnabled.value())
+                {
+                    std::cout << "UTF8 SPLIT: ";
+                    for (auto &c : chars)
+                    {
+                        std::cout << "[" << c << "]";
+                    }
+                    std::cout << std::endl;
+                }
+                
                 chars = ApplyBPE(chars);
 
                 tokens.insert(tokens.end(), chars.begin(), chars.end());
@@ -495,7 +559,7 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
             {
                 ids.push_back(vocabKV->second);
             }
-            else
+            else if (_IsByteFallbackEnabled)
             {
                 for (size_t i = 0; i < token.size(); ++i)
                 {
@@ -524,10 +588,32 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
                     }
                 }
             }
+            else
+            {
+                auto unkIt = _vocab.find("<unk>");
+
+                if (unkIt != _vocab.end())
+                {
+                    ids.push_back(unkIt->second);
+                }
+            }
         }
     }
 
     return ids;
+}
+
+std::string TokenizerBase::EncodeBytes(const std::string &input)
+{
+    std::string encodedInput;
+
+    for (size_t i = 0; i < input.size(); ++i)
+    {
+        unsigned char c = static_cast<unsigned char>(input[i]);
+        encodedInput += ByteToToken(c);
+    }
+
+    return encodedInput;
 }
 
 std::vector<std::string> TokenizerBase::SegmentInput(std::string &encodedInput)
@@ -592,90 +678,68 @@ std::vector<std::string> TokenizerBase::SegmentInput(std::string &encodedInput)
     return allPiecesAfterSegmentation;
 }
 
-std::string TokenizerBase::Decode(const std::vector<int64_t> &ids)
+std::string TokenizerBase::Decode(const int64_t tokenID)
 {
     std::ostringstream builder;
-    bool isSpecial = false;
-    bool stopDecoding = false;
 
-    for (auto id : ids)
+    auto tokenIt = _idToToken.find(tokenID);
+    bool isSpecial = (_specialTokens.count(tokenID) > 0);
+
+    if (!isSpecial && tokenIt != _idToToken.end())
     {
-        auto tokenIt = _idToToken.find(id);
-        bool isSpecial = (_specialTokens.count(id) > 0);
+        std::string tokenValue = tokenIt->second;
 
-        if (tokenIt != _idToToken.end())
+        if (_IsByteFallbackEnabled)
         {
-            if (isSpecial == true)
+            for (size_t i = 0; i < tokenValue.size();)
             {
-                bool isEos =
-                    std::find(
-                        ConfigManager::EosIds.begin(),
-                        ConfigManager::EosIds.end(),
-                        id) != ConfigManager::EosIds.end();
+                unsigned char c = static_cast<unsigned char>(tokenValue[i]);
 
-                if (isEos == true)
-                    stopDecoding = true;
-            }
+                size_t len = 1;
 
-            if (!stopDecoding)
-            {
-                std::string tokenValue = tokenIt->second;
+                if ((c & 0x80) == 0)
+                    len = 1;
+                else if ((c & 0xE0) == 0xC0)
+                    len = 2;
+                else if ((c & 0xF0) == 0xE0)
+                    len = 3;
+                else if ((c & 0xF8) == 0xF0)
+                    len = 4;
 
-                if (!isSpecial)
+                std::string piece = tokenValue.substr(i, len);
+
+                auto it = _byteDecoder.find(piece);
+
+                if (it != _byteDecoder.end())
                 {
-                    for (auto &[pattern, repl] : _decoderRules)
-                    {
-                        tokenValue = std::regex_replace(tokenValue, pattern, repl);
-                    }
+                    builder.write(reinterpret_cast<const char *>(&it->second), 1);
+                }
+                else
+                {
+                    builder << piece;
                 }
 
-                for (size_t i = 0; i < tokenValue.size();)
-                {
-                    unsigned char c = static_cast<unsigned char>(tokenValue[i]);
-
-                    size_t len = 1;
-
-                    if ((c & 0x80) == 0)
-                        len = 1;
-                    else if ((c & 0xE0) == 0xC0)
-                        len = 2;
-                    else if ((c & 0xF0) == 0xE0)
-                        len = 3;
-                    else if ((c & 0xF8) == 0xF0)
-                        len = 4;
-
-                    // garbage shit like ▁Ä
-                    if (i + len > tokenValue.size())
-                        break;
-
-                    std::string piece = tokenValue.substr(i, len);
-
-                    if (_byteFallbackVocab.find(piece) != _byteFallbackVocab.end())
-                    {
-                        auto it = _byteDecoder.find(piece);
-                        builder.write(reinterpret_cast<const char *>(&it->second), 1);
-                    }
-                    else
-                    {
-                        builder << piece;
-                    }
-
-                    i += len;
-                }
+                i += len;
             }
         }
-
-        if (stopDecoding)
-            break;
+        else
+            builder << tokenValue;
     }
 
-    auto decoded = builder.str();
+    std::string decoded;
 
-    if (!isSpecial)
+    if (isSpecial && tokenIt != _idToToken.end())
+        decoded = tokenIt->second;
+    else
     {
-        for (auto &[pattern, repl] : _decoderRules)
+        decoded = builder.str();
+
+        if (!decoded.empty())
         {
-            decoded = std::regex_replace(decoded, pattern, repl);
+            for (auto &[pattern, repl] : _postDecoderRules)
+            {
+                decoded = std::regex_replace(decoded, pattern, repl);
+            }
         }
     }
 

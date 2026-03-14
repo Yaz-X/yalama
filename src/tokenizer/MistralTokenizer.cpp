@@ -1,64 +1,76 @@
 #include "MistralTokenizer.h"
 #include "ChatTemplateProvider.h"
+#include "Helpers.h"
 
-//std::vector<std::string> MistralTokenizer::SegmentInput(std::string &encodedInput)
-//{
-//    std::vector<std::string> allPiecesAfterSegmentation;
-//
-//    size_t segmentStart = 0;
-//    size_t segmentEnd = 0;
-//
-//    std::string before;
-//    std::string specialToken;
-//
-//    std::vector<std::string> split;
-//
-//    while (!encodedInput.empty())
-//    {
-//        split.clear();
-//        specialToken.clear();
-//        before.clear();
-//
-//        segmentStart = std::string::npos;
-//        segmentEnd = std::string::npos;
-//
-//        for (auto &[id, token] : _specialTokens)
-//        {
-//            size_t pos = encodedInput.find(token);
-//
-//            if (pos != std::string::npos)
-//            {
-//                if (segmentStart == std::string::npos || pos < segmentStart)
-//                {
-//                    segmentStart = pos;
-//                    specialToken = token;
-//                }
-//            }
-//        }
-//
-//        if (segmentStart == std::string::npos)
-//        {
-//            split = SplitText(encodedInput);
-//            encodedInput.clear();
-//        }
-//        else
-//        {
-//            before = encodedInput.substr(0, segmentStart);
-//
-//            segmentEnd = segmentStart + specialToken.length();
-//
-//            if (!before.empty())
-//                split = SplitText(before);
-//
-//            encodedInput = encodedInput.substr(segmentEnd);
-//        }
-//
-//        if (!split.empty())
-//            allPiecesAfterSegmentation.insert(allPiecesAfterSegmentation.end(), split.begin(), split.end());
-//
-//        if (!specialToken.empty())
-//            allPiecesAfterSegmentation.push_back(specialToken);
-//    }
-//
-//    return allPiecesAfterSegmentation;
-//}
+MistralTokenizer::MistralTokenizer()
+{
+    _IsByteFallbackEnabled = false;
+}
+std::vector<std::string> MistralTokenizer::SplitText(const std::string &text)
+{
+    std::vector<std::string> result;
+
+    result.push_back(text);
+
+    return result;
+}
+
+void MistralTokenizer::BuildDecoderRules()
+{
+    _postDecoderRules.emplace_back("▁", " ");
+    _postDecoderRules.emplace_back("<0x0A>", "\n");
+}
+
+std::string MistralTokenizer::EncodeBytes(const std::string &input)
+{
+    std::string encodedInput = input;
+
+    ReplaceAll(encodedInput, " ", "▁");
+
+    return encodedInput;
+}
+std::string MistralTokenizer::ByteToToken(unsigned char c)
+{
+    std::string value;
+
+    if ((c & 0x80) == 0)
+    {
+        auto it = _byteEncoder.find(c);
+
+        if (it != _byteEncoder.end())
+            value = it->second;
+        else
+            value = std::string(1, static_cast<char>(c));
+    }
+    else
+    {
+        value = std::string(1, static_cast<char>(c));
+    }
+
+    return value;
+}
+
+std::unordered_map<int, std::string> MistralTokenizer::BuildByteEncoder()
+{
+    std::unordered_map<int, std::string> result;
+
+    for (int byte = 0; byte < 256; byte++)
+    {
+        std::string value(1, static_cast<char>(byte));
+        result[byte] = value;
+    }
+
+    return result;
+}
+
+std::vector<std::string> MistralTokenizer::ApplyBPE(const std::vector<std::string> &inputChars)
+{
+    std::vector<std::string> result;
+
+    if (!inputChars.empty())
+    {
+        result = TokenizerBase::ApplyBPE(inputChars);
+    }
+
+    return result;
+}

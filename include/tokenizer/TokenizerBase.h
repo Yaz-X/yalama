@@ -26,10 +26,12 @@ class TokenizerBase
 protected:
     TokenizerBase() = default;
     
+    bool _IsByteFallbackEnabled = true;    
     std::unordered_map<std::string, int> _byteFallbackVocab;
     std::unordered_map<int, std::string> _byteEncoder;
-    std::unordered_map<std::string, unsigned char> _byteDecoder;
-    std::vector<std::pair<std::regex, std::string>> _decoderRules;
+    std::unordered_map<std::string, unsigned char> _byteDecoder;    
+    std::vector<std::pair<std::regex, std::string>> _postDecoderRules;
+    
     std::unordered_map<std::vector<std::string>, std::vector<std::string>, VectorHash> _bpeCache;
     std::unordered_map<int, std::string> _specialTokens;
     std::unordered_map<std::string, std::vector<int64_t>> _encodedSpecialTokens;
@@ -37,9 +39,11 @@ protected:
     std::unordered_map<int, std::string> _idToToken;
     std::unordered_map<std::string, int> _mergeRanks;
 
+    virtual void BuildDecoderRules();
+    virtual std::string EncodeBytes(const std::string& input);
     virtual std::string ByteToToken(unsigned char c);
     virtual std::vector<std::string> SplitText(const std::string &text);
-    virtual void LoadFromJson();
+    virtual void LoadFromJson();    
     virtual std::unordered_map<int, std::string> BuildByteEncoder();
     virtual std::vector<std::string> ApplyBPE(const std::vector<std::string> &inputChars);
 
@@ -51,7 +55,7 @@ public:
     
     std::vector<int64_t> EncodeWithChatTemplate(std::string &text, bool isAddSystemHeaderInChatTemplate);
     std::vector<int64_t> EncodeWithoutChatTemplate(std::string &text);
-    std::string Decode(const std::vector<int64_t> &ids);
+    std::string Decode(const int64_t tokenID);
     std::unordered_map<int, std::string> GetSpecialTokens();
     std::unordered_map<std::string, std::vector<int64_t>> GetEncodedSpecialTokens();
     virtual ~TokenizerBase() = default;
