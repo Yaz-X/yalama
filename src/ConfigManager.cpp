@@ -377,6 +377,10 @@ void ConfigManager::Load(std::string configFolderPath)
             ModelLoadedType = ModelType::LLama;
         else if (modelType == "mistral")
             ModelLoadedType = ModelType::Mistral;
+        else if (modelType == "qwen2")
+            ModelLoadedType = ModelType::Qwen;
+        else
+            throw std::runtime_error("Unsupported model type: " + modelType);
 
         NumLayers = jsonDeserializer.at("num_hidden_layers").get<int>();
         HiddenSize = jsonDeserializer.at("hidden_size").get<int>();
@@ -432,11 +436,16 @@ void ConfigManager::Load(std::string configFolderPath)
         if (!std::filesystem::exists(modelTokenizerConfigFilePath) || !std::filesystem::is_regular_file(modelTokenizerConfigFilePath))
             throw std::runtime_error("File at Path (" + modelTokenizerConfigFilePath.string() + ") doesnt exist");
 
+        std::cout << "Loading Configs from  " << modelTokenizerConfigFilePath << std::endl;
+
         std::ifstream tokenizerConfigFileStream(modelTokenizerConfigFilePath);
         tokenizerConfigFileStream >> jsonDeserializer;
-        
+
         HasChatTemplate = jsonDeserializer.contains("chat_template");
-        BosTokenString = jsonDeserializer.at("bos_token").get<std::string>();
+
+        if (jsonDeserializer.contains("bos_token") && !jsonDeserializer["bos_token"].is_null())
+            BosTokenString = jsonDeserializer["bos_token"].get<std::string>();
+
         EosTokenString = jsonDeserializer.at("eos_token").get<std::string>();
     }
 

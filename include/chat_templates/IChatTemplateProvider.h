@@ -1,4 +1,6 @@
 #pragma once
+
+#include "ConfigManager.h" // used by derived classes
 #include <string>
 
 class IChatTemplateProvider

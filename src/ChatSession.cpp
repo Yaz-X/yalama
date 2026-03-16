@@ -218,12 +218,15 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                         if (!end)
                         {
                             int64_t token = tokensEmitQueue[0];
+                            int64_t nextToken = tokensEmitQueue.size() >= 2 ? tokensEmitQueue[1] : -1;
 
-                            EmitToken(token, emittedTokens, onTokenDecoded);
+                            int numOfEmittedTokens = EmitToken(token, nextToken, emittedTokens, onTokenDecoded);
 
-                            tokensHistory.push_back(tokensEmitQueue[0]);
-
-                            tokensEmitQueue.pop_front();
+                            for (int i = 0; i < numOfEmittedTokens && !tokensEmitQueue.empty(); i++)
+                            {
+                                tokensHistory.push_back(tokensEmitQueue.front());
+                                tokensEmitQueue.pop_front();
+                            }
                         }
                     }
 
@@ -251,12 +254,14 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
             if (!tokensEmitQueue.empty())
             {
                 int64_t token;
-              
-                for (size_t i = 0; i < tokensEmitQueue.size(); ++i)
+                int64_t nextToken;
+
+                for (size_t i = 0; i < tokensEmitQueue.size();)
                 {
                     token = tokensEmitQueue[i];
-              
-                    EmitToken(token, emittedTokens, onTokenDecoded);
+                    nextToken = (i + 1 < tokensEmitQueue.size()) ? tokensEmitQueue[i + 1] : -1;
+
+                    i += EmitToken(token, nextToken, emittedTokens, onTokenDecoded);
                 }
             }
 
@@ -457,7 +462,6 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
             std::cout << "Invalid OpenAI request: input produced zero tokens, Ensure at least one user message with non-empty content...";
         }
     }
-   
 
     return isValid;
 }
@@ -511,19 +515,41 @@ bool ChatSession::IsRepeatDetected(std::deque<int64_t> &tokensEmitQueue, const s
     return isLoop;
 }
 
-void ChatSession::EmitToken(const int64_t &tokenID, int &emittedTokensCount, const std::function<void(const std::string &)> &onTokenDecoded)
+int ChatSession::EmitToken(const int64_t &tokenID, const int64_t &nextTokenID, int &emittedTokensCount, const std::function<void(const std::string &)> &onTokenDecoded)
 {
+    bool isValidDecodedOutput = true;
+    int numOfEmittedTokens = 1;
+
     auto decoded = Tokenizer::Decode(tokenID);
 
-    decoded = std::regex_replace(decoded, _NewLineRegex, "\n");
-    decoded = std::regex_replace(decoded, _NewLineRegex2, "\n");
-
     if (!IsValidUTF8(decoded))
+    {
+        if (nextTokenID != -1)
+        {
+            auto nextDecoded = Tokenizer::Decode(nextTokenID);
+
+            decoded += nextDecoded;
+        }
+
+        isValidDecodedOutput = IsValidUTF8(decoded);
+
+        if (isValidDecodedOutput)
+            numOfEmittedTokens += 1;
+    }
+
+    if (!isValidDecodedOutput)
         decoded = "�";
+    else
+    {
+        decoded = std::regex_replace(decoded, _NewLineRegex, "\n");
+        decoded = std::regex_replace(decoded, _NewLineRegex2, "\n");
+    }
 
     onTokenDecoded(decoded);
 
-    emittedTokensCount++;
+    emittedTokensCount += numOfEmittedTokens;
+
+    return numOfEmittedTokens;
 }
 
 int64_t ChatSession::Sample(torch::Tensor &lastLogitsToken, bool isGreedy)

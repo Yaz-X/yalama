@@ -389,14 +389,14 @@ int main(int argsCount, char **args)
         std::cout << "TopK: " << ConfigManager::TopK << std::endl;
         std::cout << "Temperature: " << ConfigManager::Temp << std::endl;
     }
-
+    
     std::cout << "Show Loaded Weights: " << (ConfigManager::IsShowLoadedWeights.value() ? "true" : "false") << std::endl;
     std::cout << "==================================================" << std::endl
               << std::endl;
 
     nlohmann::json messages = nlohmann::json::array();
     std::string assistantResponse;
-   
+
     Model::Init();
 
     ChatSession session;

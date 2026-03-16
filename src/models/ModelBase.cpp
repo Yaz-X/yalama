@@ -21,7 +21,7 @@ void ModelBase::Load()
 
     if (!_Weights.empty())
         return;
-    
+
     std::filesystem::path modelPath = ConfigManager::ModelPath;
 
     if (!std::filesystem::exists(modelPath) || !std::filesystem::is_directory(modelPath))
@@ -90,7 +90,15 @@ void ModelBase::Load()
                   << std::endl;
 
         for (auto &st : shards)
-            totalTensorCount += st.tensors.size();
+        {
+            for (auto &[name, meta] : st.tensors)
+            {
+                if (IsLoadWeight(name))
+                {
+                    totalTensorCount++;
+                }
+            }
+        }
     }
 
     for (auto &st : shards)
@@ -153,11 +161,14 @@ void ModelBase::Load()
     _QWeightKeys.resize(ConfigManager::NumLayers);
     _KWeightKeys.resize(ConfigManager::NumLayers);
     _VWeightKeys.resize(ConfigManager::NumLayers);
+    _QBiasWeightKeys.resize(ConfigManager::NumLayers);
+    _KBiasWeightKeys.resize(ConfigManager::NumLayers);
+    _VBiasWeightKeys.resize(ConfigManager::NumLayers);
     _WoWeightKeys.resize(ConfigManager::NumLayers);
     _Wgate.resize(ConfigManager::NumLayers);
     _WUp.resize(ConfigManager::NumLayers);
     _Wdown.resize(ConfigManager::NumLayers);
-
+    
     for (int i = 0; i < ConfigManager::NumLayers; i++)
     {
         _RMSNormPreAttentionWeightKeys[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::PreAttentionNorm), i));
@@ -172,6 +183,15 @@ void ModelBase::Load()
 
         _VWeightKeys[i] =
             &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::VProj), i));
+
+        if (_WeightNames.find(WeightType::BiasQ) != _WeightNames.end())
+            _QBiasWeightKeys[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::BiasQ), i));
+
+        if (_WeightNames.find(WeightType::BiasK) != _WeightNames.end())
+            _KBiasWeightKeys[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::BiasK), i));
+
+        if (_WeightNames.find(WeightType::BiasV) != _WeightNames.end())
+            _VBiasWeightKeys[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::BiasV), i));
 
         _WoWeightKeys[i] =
             &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::OProj), i));
@@ -272,9 +292,9 @@ void ModelBase::CalculateMaxSequenceLength()
 
     ConfigManager::MaxSequenceLength = std::min(ConfigManager::MaxSequenceLength, tokensPerAvailableMemory);
 
-    if (ConfigManager::MaxSequenceLength < 512)    
+    if (ConfigManager::MaxSequenceLength < 512)
         throw std::runtime_error(
-            "GPU memory too low: runtime cannot support the minimum context of 512 tokens");    
+            "GPU memory too low: runtime cannot support the minimum context of 512 tokens");
 
     std::cout
         << "Runtime Max Sequence Length After Calculation: "
@@ -527,28 +547,19 @@ AttentionCalculationResult ModelBase::CalculateInferenceAttention(const torch::T
         }
     }
 
+    TraceLogger::Dump("q_rope", q, TraceLogger::_TraceStep);
+    TraceLogger::Dump("k_rope", k, TraceLogger::_TraceStep);
+
     if (result.IsKVCacheCapacityValid)
     {
-        TraceLogger::Dump("q_rope", q, TraceLogger::_TraceStep);
-        TraceLogger::Dump("k_rope", k, TraceLogger::_TraceStep);
-
-        int rep = ConfigManager::NumHeads / ConfigManager::NumKVHeads;
-
-        k = k.unsqueeze(2);
-        v = v.unsqueeze(2);
-
-        k = k.expand({k.size(0), k.size(1), rep, k.size(3), k.size(4)});
-        v = v.expand({v.size(0), v.size(1), rep, v.size(3), v.size(4)});
-
-        k = k.reshape({k.size(0), ConfigManager::NumHeads, k.size(3), k.size(4)});
-        v = v.reshape({v.size(0), ConfigManager::NumHeads, v.size(3), v.size(4)});
+        ExpandKV(k, v);
 
         TraceLogger::Dump("q_exp", q, TraceLogger::_TraceStep);
         TraceLogger::Dump("k_exp", k, TraceLogger::_TraceStep);
         TraceLogger::Dump("v_exp", v, TraceLogger::_TraceStep);
 
-        TORCH_CHECKER(k.size(1) == ConfigManager::NumHeads);
-        TORCH_CHECKER(v.size(1) == ConfigManager::NumHeads);
+        // TORCH_CHECKER(k.size(1) == ConfigManager::NumHeads);
+        // TORCH_CHECKER(v.size(1) == ConfigManager::NumHeads);
 
         auto B = q.size(0);
         auto Hq = q.size(1);
@@ -556,19 +567,19 @@ AttentionCalculationResult ModelBase::CalculateInferenceAttention(const torch::T
 
         auto Hkv = k.size(1);
 
-        TORCH_CHECKER(Hq == ConfigManager::NumHeads);
-        TORCH_CHECKER(Hkv == ConfigManager::NumHeads);
-        TORCH_CHECKER(k.size(0) == B && k.size(3) == D);
-        TORCH_CHECKER(v.size(0) == B && v.size(3) == D);
+        //  TORCH_CHECKER(Hq == ConfigManager::NumHeads);
+        //  TORCH_CHECKER(Hkv == ConfigManager::NumHeads);
+        //  TORCH_CHECKER(k.size(0) == B && k.size(3) == D);
+        //  TORCH_CHECKER(v.size(0) == B && v.size(3) == D);
 
-        torch::Tensor attOut;
+        torch::Tensor mask;
 
         if (!ConfigManager::IsKVCacheEnabled.value() || _LastKVCacheTokenIndex == 0)
         {
             int64_t Tq = q.size(2);
-            int64_t Tk = k.size(2);            
-            
-            auto mask =
+            int64_t Tk = k.size(2);
+
+            mask =
                 torch::triu(
                     torch::ones({Tk, Tk}, q.options()),
                     1) *
@@ -578,30 +589,12 @@ AttentionCalculationResult ModelBase::CalculateInferenceAttention(const torch::T
                        .unsqueeze(0)
                        .unsqueeze(0);
 
-            TraceLogger::Dump("attn_scores_with_mask", mask, TraceLogger::_TraceStep);
-
-            attOut =
-                torch::scaled_dot_product_attention(
-                    q,
-                    k,
-                    v,
-                    mask,
-                    0.0,
-                    false);
-        }
-        else
-        {
-            attOut =
-                torch::scaled_dot_product_attention(
-                    q,
-                    k,
-                    v,
-                    c10::nullopt,
-                    0.0,
-                    false);
+            TraceLogger::Dump("mask", mask, TraceLogger::_TraceStep);
         }
 
-        TraceLogger::Dump("attn_heads", attOut, TraceLogger::_TraceStep);
+        auto attOut = ApplyScaledDotProductAttention(q, k, v, mask);
+
+        TraceLogger::Dump("attn_out", attOut, TraceLogger::_TraceStep);
 
         auto attOut2 = MergeHeadsAttentionOut(attOut);
 
@@ -615,6 +608,44 @@ AttentionCalculationResult ModelBase::CalculateInferenceAttention(const torch::T
     }
 
     return result;
+}
+
+torch::Tensor ModelBase::ApplyScaledDotProductAttention(torch::Tensor &q, torch::Tensor &k, torch::Tensor &v, torch::Tensor &mask)
+{
+    torch::Tensor out;
+
+    if (mask.defined())
+        out = torch::scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            mask,
+            0.0,
+            false);
+    else
+        out = torch::scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            c10::nullopt,
+            0.0,
+            false);
+
+    return out;
+}
+
+void ModelBase::ExpandKV(torch::Tensor &k, torch::Tensor &v)
+{
+    int rep = ConfigManager::NumHeads / ConfigManager::NumKVHeads;
+
+    k = k.unsqueeze(2);
+    v = v.unsqueeze(2);
+
+    k = k.expand({k.size(0), k.size(1), rep, k.size(3), k.size(4)});
+    v = v.expand({v.size(0), v.size(1), rep, v.size(3), v.size(4)});
+
+    k = k.reshape({k.size(0), ConfigManager::NumHeads, k.size(3), k.size(4)});
+    v = v.reshape({v.size(0), ConfigManager::NumHeads, v.size(3), v.size(4)});
 }
 
 torch::Tensor ModelBase::CalculatePreAttentionRMSNorm(const torch::Tensor &x, int layer)
@@ -700,7 +731,7 @@ torch::Tensor ModelBase::ApplyInferencingRope(const torch::Tensor &x, int start_
 
     auto xcos = (x * cos);
 
-    TraceLogger::Dump(name + "cos", sin, TraceLogger::_TraceStep);
+    TraceLogger::Dump(name + "cos", xcos, TraceLogger::_TraceStep);
 
     auto x1 = x.narrow(3, 0, half);
     auto x2 = x.narrow(3, half, D - half);
@@ -717,6 +748,8 @@ torch::Tensor ModelBase::ApplyInferencingRope(const torch::Tensor &x, int start_
     TraceLogger::Dump(name + "sin", xsin, TraceLogger::_TraceStep);
 
     auto out = xcos + xsin;
+
+    TraceLogger::Dump(name + "_final_rot", out, TraceLogger::_TraceStep);
 
     return out;
 }

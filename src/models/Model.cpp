@@ -1,6 +1,7 @@
 #include "Model.h"
 #include "LlamaModel.h"
 #include "MistralModel.h"
+#include "QwenModel.h"
 #include "ConfigManager.h"
 
 std::unique_ptr<ModelBase> Model::_model = nullptr;
@@ -15,6 +16,10 @@ void Model::Init()
 
     case ModelType::Mistral:
         _model = std::make_unique<MistralModel>();
+        break;
+
+    case ModelType::Qwen:
+        _model = std::make_unique<QwenModel>();
         break;
 
     default:

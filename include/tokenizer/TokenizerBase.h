@@ -41,6 +41,7 @@ protected:
 
     virtual void BuildDecoderRules();
     virtual std::string EncodeBytes(const std::string& input);
+    virtual size_t GetCharByteLength(unsigned char c);
     virtual std::string ByteToToken(unsigned char c);
     virtual std::vector<std::string> SplitText(const std::string &text);
     virtual void LoadFromJson();    
@@ -55,7 +56,7 @@ public:
     
     std::vector<int64_t> EncodeWithChatTemplate(std::string &text, bool isAddSystemHeaderInChatTemplate);
     std::vector<int64_t> EncodeWithoutChatTemplate(std::string &text);
-    std::string Decode(const int64_t tokenID);
+    virtual std::string Decode(const int64_t tokenID);
     std::unordered_map<int, std::string> GetSpecialTokens();
     std::unordered_map<std::string, std::vector<int64_t>> GetEncodedSpecialTokens();
     virtual ~TokenizerBase() = default;

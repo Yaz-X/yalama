@@ -9,6 +9,7 @@
 #include "LlamaInstructChatTemplateProvider.h"
 #include "LlamaChatTemplateProvider.h"
 #include "MistralChatTemplateProvider.h"
+#include "QwenChatTemplateProvider.h"
 
 class ChatTemplateProvider
 {
@@ -64,6 +65,12 @@ private:
             case ModelType::Mistral:
             {
                 provider = std::make_unique<MistralChatTemplateProvider>();
+                break;
+            }
+
+            case ModelType::Qwen:
+            {
+                provider = std::make_unique<QwenChatTemplateProvider>();
                 break;
             }
 

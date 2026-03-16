@@ -2,6 +2,7 @@
 #include "ConfigManager.h"
 #include "LlamaTokenizer.h"
 #include "MistralTokenizer.h"
+#include "QwenTokenizer.h"
 
 std::unique_ptr<TokenizerBase> Tokenizer::_tokenizer = nullptr;
 
@@ -9,16 +10,19 @@ void Tokenizer::Init()
 {
     switch (ConfigManager::ModelLoadedType)
     {
-        case ModelType::LLama:
-            _tokenizer = std::make_unique<LlamaTokenizer>();
-            break;
+    case ModelType::LLama:
+        _tokenizer = std::make_unique<LlamaTokenizer>();
+        break;
 
-        case ModelType::Mistral:
-            _tokenizer = std::make_unique<MistralTokenizer>();
-            break;
+    case ModelType::Mistral:
+        _tokenizer = std::make_unique<MistralTokenizer>();
+        break;
+    case ModelType::Qwen:
+        _tokenizer = std::make_unique<QwenTokenizer>();
+        break;
 
-        default:
-            throw std::runtime_error("Unsupported model type for tokenizer");
+    default:
+        throw std::runtime_error("Unsupported model type for tokenizer");
     }
 
     _tokenizer->Init();

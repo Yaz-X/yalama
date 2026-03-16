@@ -6,6 +6,7 @@ class LlamaModel : public ModelBase
 {
 
 protected:
+  
   void PopulateWeightNames() override;
 
 public:

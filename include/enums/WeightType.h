@@ -11,5 +11,8 @@ enum class WeightType
     UpProj,
     DownProj,
     FinalNorm,
-    LMHead
+    LMHead,
+    BiasQ,
+    BiasK,
+    BiasV
 };

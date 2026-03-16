@@ -2,5 +2,6 @@ enum class ModelType
 {
     None,
     LLama,
-    Mistral
+    Mistral,
+    Qwen
 };

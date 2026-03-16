@@ -35,6 +35,11 @@ protected:
     std::vector<const torch::Tensor *> _QWeightKeys;
     std::vector<const torch::Tensor *> _KWeightKeys;
     std::vector<const torch::Tensor *> _VWeightKeys;
+
+    std::vector<const torch::Tensor *> _QBiasWeightKeys;
+    std::vector<const torch::Tensor *> _KBiasWeightKeys;
+    std::vector<const torch::Tensor *> _VBiasWeightKeys;
+
     std::vector<const torch::Tensor *> _WoWeightKeys;
     std::vector<const torch::Tensor *> _Wgate;
     std::vector<const torch::Tensor *> _WUp;
@@ -45,7 +50,7 @@ protected:
     const torch::Tensor *_FinalRMSNormWeight;
 
     virtual void PopulateWeightNames() = 0;
-    void BuildRopeCache();
+    virtual void BuildRopeCache();
 
     virtual bool IsLoadWeight(const std::string &name);
     virtual void InitKVCache();
@@ -53,6 +58,8 @@ protected:
     virtual bool EnsureKVCapacity(int memoryNeeded);
     virtual void EnsureSequenceLength(torch::Tensor &tokenVectors, std::vector<int> &eosPerPrompt);
     virtual AttentionCalculationResult CalculateInferenceAttention(const torch::Tensor &x, int layer);
+    virtual void ExpandKV(torch::Tensor &k, torch::Tensor &v);
+    virtual torch::Tensor ApplyScaledDotProductAttention(torch::Tensor &q, torch::Tensor &k, torch::Tensor &v, torch::Tensor &mask);
     virtual torch::Tensor GetEmbeddings(const torch::Tensor &ids);
     virtual torch::Tensor CalculatePreAttentionRMSNorm(const torch::Tensor &x, int layer);
     virtual torch::Tensor CalculatePostAttentionRMSNorm(const torch::Tensor &x, int layer);

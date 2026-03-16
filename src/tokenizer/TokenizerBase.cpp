@@ -194,16 +194,7 @@ std::vector<std::string> TokenizerBase::SplitText(const std::string &text)
     {
         unsigned char c = static_cast<unsigned char>(text[i]);
 
-        size_t charLen = 1;
-
-        if ((c & 0x80) == 0)
-            charLen = 1;
-        else if ((c & 0xE0) == 0xC0)
-            charLen = 2;
-        else if ((c & 0xF0) == 0xE0)
-            charLen = 3;
-        else if ((c & 0xF8) == 0xF0)
-            charLen = 4;
+        size_t charLen = GetCharByteLength(c);
 
         std::string ch = text.substr(i, charLen);
 
@@ -438,16 +429,7 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
         {
             unsigned char c = static_cast<unsigned char>(input[i]);
 
-            size_t len = 1;
-
-            if ((c & 0x80) == 0)
-                len = 1;
-            else if ((c & 0xE0) == 0xC0)
-                len = 2;
-            else if ((c & 0xF0) == 0xE0)
-                len = 3;
-            else if ((c & 0xF8) == 0xF0)
-                len = 4;
+            size_t len = GetCharByteLength(c);
 
             std::cout << " [" << input.substr(i, len) << "] ";
 
@@ -468,16 +450,7 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
         {
             unsigned char c = static_cast<unsigned char>(encodedInput[i]);
 
-            size_t len = 1;
-
-            if ((c & 0x80) == 0)
-                len = 1;
-            else if ((c & 0xE0) == 0xC0)
-                len = 2;
-            else if ((c & 0xF0) == 0xE0)
-                len = 3;
-            else if ((c & 0xF8) == 0xF0)
-                len = 4;
+            size_t len = GetCharByteLength(c);
 
             std::cout << " [" << encodedInput.substr(i, len) << "] ";
 
@@ -515,16 +488,7 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
                 {
                     unsigned char c = piece[i];
 
-                    size_t len = 1;
-
-                    if ((c & 0x80) == 0)
-                        len = 1;
-                    else if ((c & 0xE0) == 0xC0)
-                        len = 2;
-                    else if ((c & 0xF0) == 0xE0)
-                        len = 3;
-                    else if ((c & 0xF8) == 0xF0)
-                        len = 4;
+                    size_t len = GetCharByteLength(c);
 
                     chars.push_back(piece.substr(i, len));
                     i += len;
@@ -539,7 +503,7 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
                     }
                     std::cout << std::endl;
                 }
-                
+
                 chars = ApplyBPE(chars);
 
                 tokens.insert(tokens.end(), chars.begin(), chars.end());
@@ -601,6 +565,22 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
     }
 
     return ids;
+}
+
+size_t TokenizerBase::GetCharByteLength(unsigned char c)
+{    
+    size_t len = 1;
+
+    if ((c & 0x80) == 0)    
+        len = 1;    
+    else if ((c & 0xE0) == 0xC0)    
+        len = 2;    
+    else if ((c & 0xF0) == 0xE0)    
+        len = 3;    
+    else if ((c & 0xF8) == 0xF0)    
+        len = 4;        
+
+    return len;
 }
 
 std::string TokenizerBase::EncodeBytes(const std::string &input)
@@ -695,16 +675,7 @@ std::string TokenizerBase::Decode(const int64_t tokenID)
             {
                 unsigned char c = static_cast<unsigned char>(tokenValue[i]);
 
-                size_t len = 1;
-
-                if ((c & 0x80) == 0)
-                    len = 1;
-                else if ((c & 0xE0) == 0xC0)
-                    len = 2;
-                else if ((c & 0xF0) == 0xE0)
-                    len = 3;
-                else if ((c & 0xF8) == 0xF0)
-                    len = 4;
+                auto len = GetCharByteLength(c);
 
                 std::string piece = tokenValue.substr(i, len);
 
