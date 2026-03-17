@@ -9,7 +9,7 @@
     "isServiceLoggingEnabled": false,
     "isTorchValidationsEnabled": false,
     "isKVCacheEnabled": true,
-    "kvCacheSizeInGB": 6,
+    "kvCacheSizeInGB": 4,
     "isGreedy": true,
     "topk": 40,
     "temp": 0.6
