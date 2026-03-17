@@ -1,6 +1,6 @@
 # YALAMA
 
-## **Production-grade Native C++ LLaMA/Mistral/Qwen2.5 Runtime**
+## **Production-grade Native C++ LLaMA/Mistral/Qwen2.5 Text Based Models Runtime**
 
 Deterministic high-performance **LibTorch inference runtime** built entirely in C++.
 
