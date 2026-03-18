@@ -174,7 +174,7 @@ Runs an **interactive terminal session**.
 | `--temp`                      | `0.05–0.7`, default `0.6`. Ignored if greedy is enabled                                                         |
 | `--showloadedweights`         | `1 = enable`, `0 = disable`. Shows weight names during loading                                                  |
 | `--isThinkingEnabled`         | `1 = enable`, `0 = disable`. enables/disables think for models that support it, Default Disabled                |
-| `--isPrintChatTemplateOutput` | `1 = enable`, `0 = disable`. prints chat template output before model reply, only valid for REPL mode           |
+| `--isPrintChatTemplateOutput` | `1 = enable`, `0 = disable`. prints chat template output before model reply                                     |
 
 **NOTE: logs arg is path of the folder where the log file is written, the log file is huge and logs tensors in each step in each layer, and have a high performance
 impace.**
@@ -242,7 +242,7 @@ If no configuration is provided, the following defaults are used:
 | `topk`                        | `40`          | Ignored if greedy enabled                                                                         |
 | `temp`                        | `0.6`         | Ignored if greedy enabled                                                                         |
 | `isThinkingEnabled`           | `false`       | disables think for models that support it                                                         |
-| `isPrintChatTemplateOutput`   | `false`       | doesnt print chat template output before model reply, only valid for REPL mode                    |
+| `isPrintChatTemplateOutput`   | `false`       | doesnt print chat template output before model reply                                              |
 
 ## Docker
 
