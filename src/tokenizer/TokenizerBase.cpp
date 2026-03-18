@@ -90,24 +90,37 @@ void TokenizerBase::LoadFromJson()
         _idToToken[id] = token;
     }
 
+    _ignoredAddedTokens = {
+    //    "\x00\x01\x02\x03\x04\x05\x06\x07",
+        "<|reserved_special_token",
+        "[control_"};
+
     auto addedTokens = json["added_tokens"];
 
     for (auto &tok : addedTokens)
     {
-        if (tok.contains("special") &&
-            tok["special"].get<bool>() == true &&
-            tok.contains("content"))
+        if (tok.contains("id") && tok.contains("content"))
         {
             int id = tok["id"].get<int>();
             std::string content = tok["content"].get<std::string>();
 
-            if (content.find_first_of("\x00\x01\x02\x03\x04\x05\x06\x07") == std::string::npos &&
-                content.rfind("<|reserved_special_token", 0) != 0 &&
-                content.rfind("[control_", 0) != 0)
+            bool isIgnored = std::any_of(
+                _ignoredAddedTokens.begin(),
+                _ignoredAddedTokens.end(),
+                [&](const std::string &pattern)
+                {
+                    return content.rfind(pattern, 0) == 0;
+                });
+
+            // ALWAYS add to vocab + decode map
+            _idToToken[id] = content;
+            _vocab[content] = id;
+
+            // ONLY mark special if explicitly true, sometimes junk that are not used are marked as special, so we also ignore
+            //to optimize performance when checking special tokens
+            if (!isIgnored && tok.contains("special") && tok["special"].get<bool>() == true)
             {
                 _specialTokens[id] = content;
-                _idToToken[id] = content;
-                _vocab[content] = id;
             }
         }
     }
@@ -134,7 +147,7 @@ void TokenizerBase::LoadFromJson()
 
         _byteDecoder[token] = byte;
 
-        if (_IsByteFallbackEnabled)
+        if (_isByteFallbackEnabled)
         {
             auto it = _vocab.find(token);
 
@@ -155,7 +168,17 @@ void TokenizerBase::LoadFromJson()
 
     for (int i = 0; i < merges.size(); ++i)
     {
-        const std::string &m = merges[i];
+        std::string m;
+
+        if (merges[i].is_string())
+        {
+            m = merges[i].get<std::string>();
+        }
+        else
+        {
+            const auto &arr = merges[i];
+            m = arr[0].get<std::string>() + " " + arr[1].get<std::string>();
+        }
 
         auto pos = m.find(' ');
 
@@ -523,7 +546,7 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
             {
                 ids.push_back(vocabKV->second);
             }
-            else if (_IsByteFallbackEnabled)
+            else if (_isByteFallbackEnabled)
             {
                 for (size_t i = 0; i < token.size(); ++i)
                 {
@@ -568,17 +591,17 @@ std::vector<int64_t> TokenizerBase::Encode(std::string &text, bool isApplyChatTe
 }
 
 size_t TokenizerBase::GetCharByteLength(unsigned char c)
-{    
+{
     size_t len = 1;
 
-    if ((c & 0x80) == 0)    
-        len = 1;    
-    else if ((c & 0xE0) == 0xC0)    
-        len = 2;    
-    else if ((c & 0xF0) == 0xE0)    
-        len = 3;    
-    else if ((c & 0xF8) == 0xF0)    
-        len = 4;        
+    if ((c & 0x80) == 0)
+        len = 1;
+    else if ((c & 0xE0) == 0xC0)
+        len = 2;
+    else if ((c & 0xF0) == 0xE0)
+        len = 3;
+    else if ((c & 0xF8) == 0xF0)
+        len = 4;
 
     return len;
 }
@@ -669,7 +692,7 @@ std::string TokenizerBase::Decode(const int64_t tokenID)
     {
         std::string tokenValue = tokenIt->second;
 
-        if (_IsByteFallbackEnabled)
+        if (_isByteFallbackEnabled)
         {
             for (size_t i = 0; i < tokenValue.size();)
             {

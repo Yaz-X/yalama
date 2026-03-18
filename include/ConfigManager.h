@@ -31,7 +31,7 @@ public:
     inline static std::string EosTokenString;
     inline static std::string BosTokenString;
     inline static bool HasChatTemplate = false;
-
+    
     // yalama Configs
     inline static std::string ModelPath = "";
     inline static std::string ConfigPath = "";
@@ -44,6 +44,10 @@ public:
     inline static std::optional<bool> IsGreedy;
     inline static std::optional<bool> IsTorchChecksEnabled;
     inline static std::optional<bool> IsServiceLoggingEnabled;    
+    inline static std::optional<bool> IsThinkingEnabled;
+    inline static std::optional<bool> isPrintChatTemplateOutput;
+    inline static bool IsModelSupportThinking = false;
+    
     inline static int KVCacheSizeInGB = 0;    
     inline static int TopK = 0;
     inline static float Temp = 0;

@@ -229,6 +229,36 @@ void ConfigManager::Load(std::string configFolderPath)
                     }
                 }
 
+                if (!IsThinkingEnabled.has_value())
+                {
+                    key = "isThinkingEnabled";
+                    if (jsonDeserializer.contains(key))
+                    {
+                        IsThinkingEnabled = jsonDeserializer.at(key).get<bool>();
+                        PrintPropertyLoaded(key, std::to_string(IsThinkingEnabled.value()));
+                    }
+                    else
+                    {
+                        IsThinkingEnabled = true;
+                        PrintPropertyNotFound(key, "true");
+                    }
+                }
+
+                if (!isPrintChatTemplateOutput.has_value())
+                {
+                    key = "isPrintChatTemplateOutput";
+                    if (jsonDeserializer.contains(key))
+                    {
+                        isPrintChatTemplateOutput = jsonDeserializer.at(key).get<bool>();
+                        PrintPropertyLoaded(key, std::to_string(isPrintChatTemplateOutput.value()));
+                    }
+                    else
+                    {
+                        isPrintChatTemplateOutput = true;
+                        PrintPropertyNotFound(key, "false");
+                    }
+                }
+
                 if (!IsGreedy.value_or(true))
                 {
                     if (TopK == 0)
@@ -344,6 +374,12 @@ void ConfigManager::Load(std::string configFolderPath)
         if (!IsServiceLoggingEnabled.has_value())
             IsServiceLoggingEnabled = false;
 
+        if (!IsThinkingEnabled.has_value())
+            IsThinkingEnabled = true;
+
+        if (!isPrintChatTemplateOutput.has_value())
+            isPrintChatTemplateOutput = false;
+
         if (TopK == 0)
             TopK = 40;
 
@@ -378,7 +414,9 @@ void ConfigManager::Load(std::string configFolderPath)
         else if (modelType == "mistral")
             ModelLoadedType = ModelType::Mistral;
         else if (modelType == "qwen2")
-            ModelLoadedType = ModelType::Qwen;
+            ModelLoadedType = ModelType::Qwen2_5;
+        else if (modelType == "qwen3")
+            ModelLoadedType = ModelType::Qwen3;
         else
             throw std::runtime_error("Unsupported model type: " + modelType);
 
@@ -427,7 +465,10 @@ void ConfigManager::Load(std::string configFolderPath)
         if (HiddenSize % NumHeads != 0)
             throw std::runtime_error("HiddenSize must be divisible by NumHeads");
 
-        HeadDim = HiddenSize / NumHeads;
+        if (jsonDeserializer.contains("head_dim"))
+            HeadDim = jsonDeserializer.at("head_dim").get<int>();
+        else
+            HeadDim = HiddenSize / NumHeads;
 
         // Tokenizer config
         std::filesystem::path modelTokenizerConfigFilePath = ModelPath;
@@ -442,6 +483,12 @@ void ConfigManager::Load(std::string configFolderPath)
         tokenizerConfigFileStream >> jsonDeserializer;
 
         HasChatTemplate = jsonDeserializer.contains("chat_template");
+
+        if(HasChatTemplate)
+        {
+            std::string chatTemplate = jsonDeserializer["chat_template"].get<std::string>();
+            IsModelSupportThinking = chatTemplate.find("<think>") != std::string::npos;
+        }
 
         if (jsonDeserializer.contains("bos_token") && !jsonDeserializer["bos_token"].is_null())
             BosTokenString = jsonDeserializer["bos_token"].get<std::string>();

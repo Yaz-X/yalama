@@ -9,7 +9,8 @@
 #include "LlamaInstructChatTemplateProvider.h"
 #include "LlamaChatTemplateProvider.h"
 #include "MistralChatTemplateProvider.h"
-#include "QwenChatTemplateProvider.h"
+#include "Qwen2_5ChatTemplateProvider.h"
+#include "Qwen3ChatTemplateProvider.h"
 
 class ChatTemplateProvider
 {
@@ -68,9 +69,15 @@ private:
                 break;
             }
 
-            case ModelType::Qwen:
+            case ModelType::Qwen2_5:           
             {
-                provider = std::make_unique<QwenChatTemplateProvider>();
+                provider = std::make_unique<Qwen2_5ChatTemplateProvider>();
+                break;
+            }
+
+            case ModelType::Qwen3:           
+            {
+                provider = std::make_unique<Qwen3ChatTemplateProvider>();
                 break;
             }
 
@@ -104,5 +111,10 @@ public:
         InitProvider();
 
         return provider->GetEOSTokenString();
+    }
+
+    static std::string GetThinkString()
+    {
+         return provider->GetThinkString();
     }
 };

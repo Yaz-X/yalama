@@ -4,7 +4,7 @@
 
 MistralTokenizer::MistralTokenizer()
 {
-    _IsByteFallbackEnabled = false;
+    _isByteFallbackEnabled = false;
 }
 std::vector<std::string> MistralTokenizer::SplitText(const std::string &text)
 {

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "LlamaModel.h"
+#include "ModelBase.h"
 
-class QwenModel : public LlamaModel
+class Qwen2_5Model : public ModelBase
 {
 protected:
   
@@ -12,5 +12,5 @@ protected:
   torch::Tensor CalculateProjectionV(const torch::Tensor &x, int layer) override;
 
 public:
-  QwenModel();
+  Qwen2_5Model();
 };

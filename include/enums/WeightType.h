@@ -14,5 +14,7 @@ enum class WeightType
     LMHead,
     BiasQ,
     BiasK,
-    BiasV
+    BiasV,
+    QNormWeight,
+    KNormWeight
 };

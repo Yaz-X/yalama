@@ -26,7 +26,8 @@ class TokenizerBase
 protected:
     TokenizerBase() = default;
     
-    bool _IsByteFallbackEnabled = true;    
+    bool _isByteFallbackEnabled = true;    
+    std::vector<std::string> _ignoredAddedTokens;
     std::unordered_map<std::string, int> _byteFallbackVocab;
     std::unordered_map<int, std::string> _byteEncoder;
     std::unordered_map<std::string, unsigned char> _byteDecoder;    

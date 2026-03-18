@@ -5,42 +5,42 @@
     See LICENSE file in project root.
 */
 
-#include "QwenModel.h"
+#include "Qwen2_5Model.h"
 #include "ConfigManager.h"
 #include "TraceLogger.h"
 
-QwenModel::QwenModel()
+Qwen2_5Model::Qwen2_5Model()
 {
 }
 
-void QwenModel::PopulateWeightNames()
+void Qwen2_5Model::PopulateWeightNames()
 {
-    LlamaModel::PopulateWeightNames();
+    ModelBase::PopulateWeightNames();
 
     _WeightNames[WeightType::BiasQ] = "model.layers.%d.self_attn.q_proj.bias";
     _WeightNames[WeightType::BiasK] = "model.layers.%d.self_attn.k_proj.bias";
     _WeightNames[WeightType::BiasV] = "model.layers.%d.self_attn.v_proj.bias";
 }
 
-torch::Tensor QwenModel::CalculateProjectionQ(const torch::Tensor &x, int layer)
+torch::Tensor Qwen2_5Model::CalculateProjectionQ(const torch::Tensor &x, int layer)
 {
-    auto out = LlamaModel::CalculateProjectionQ(x, layer);
+    auto out = ModelBase::CalculateProjectionQ(x, layer);
     out = out + *_QBiasWeightKeys[layer];
 
     return out;
 }
 
-torch::Tensor QwenModel::CalculateProjectionK(const torch::Tensor &x, int layer)
+torch::Tensor Qwen2_5Model::CalculateProjectionK(const torch::Tensor &x, int layer)
 {
 
-    auto out = LlamaModel::CalculateProjectionK(x, layer);
+    auto out = ModelBase::CalculateProjectionK(x, layer);
     out = out + *_KBiasWeightKeys[layer];
 
     return out;
 }
-torch::Tensor QwenModel::CalculateProjectionV(const torch::Tensor &x, int layer)
+torch::Tensor Qwen2_5Model::CalculateProjectionV(const torch::Tensor &x, int layer)
 {
-    auto out = LlamaModel::CalculateProjectionV(x, layer);
+    auto out = ModelBase::CalculateProjectionV(x, layer);
     out = out + *_VBiasWeightKeys[layer];
 
     return out;

@@ -17,10 +17,11 @@ void Tokenizer::Init()
     case ModelType::Mistral:
         _tokenizer = std::make_unique<MistralTokenizer>();
         break;
-    case ModelType::Qwen:
+    case ModelType::Qwen2_5:
+    case ModelType::Qwen3:
         _tokenizer = std::make_unique<QwenTokenizer>();
         break;
-
+        
     default:
         throw std::runtime_error("Unsupported model type for tokenizer");
     }

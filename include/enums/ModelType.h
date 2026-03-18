@@ -3,5 +3,6 @@ enum class ModelType
     None,
     LLama,
     Mistral,
-    Qwen
+    Qwen2_5,
+    Qwen3
 };

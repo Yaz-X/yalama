@@ -2,13 +2,13 @@
 #include "IChatTemplateProvider.h"
 #include <sstream>
 
-class QwenChatTemplateProvider : public IChatTemplateProvider
+class Qwen2_5ChatTemplateProvider : public IChatTemplateProvider
 {
 public:
     std::string Format(const std::string &text, bool isAddSystemHeaderInChatTemplate) override
     {
         std::ostringstream chatTemplate;
-
+        
         if (isAddSystemHeaderInChatTemplate)
         {
             chatTemplate
@@ -19,7 +19,7 @@ public:
 
         chatTemplate
             << "<|im_start|>user\n"
-            << text
+            << text            
             << "<|im_end|>\n"
             << "<|im_start|>assistant\n";
 

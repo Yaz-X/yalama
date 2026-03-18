@@ -22,6 +22,7 @@ std::regex ChatSession::_NewLineRegex2 = std::regex("<br>");
 int ChatSession::_DecodeSafetyWindowToEmitTokens = 10;
 bool ChatSession::_isTokenizerInitialized = false;
 static std::mutex tokenizerMutex;
+std::string undecodedJunk;
 
 ChatSession::ChatSession()
 {
@@ -50,18 +51,6 @@ ChatSession::ChatSession()
             if (!isEos)
             {
                 _MaskedTokenIds.push_back(id);
-
-                // std::string specialToken = token;
-                // specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '<'), specialToken.end());
-                // specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '>'), specialToken.end());
-                // specialToken.erase(std::remove(specialToken.begin(), specialToken.end(), '|'), specialToken.end());
-                //
-                // auto textIds = Tokenizer::GetEncodedSpecialTokens()[specialToken];
-                //
-                // for (auto tid : textIds)
-                //{
-                //    _MaskedTokenIds.push_back(tid);
-                //}
             }
         }
     }
@@ -217,16 +206,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                     {
                         if (!end)
                         {
-                            int64_t token = tokensEmitQueue[0];
-                            int64_t nextToken = tokensEmitQueue.size() >= 2 ? tokensEmitQueue[1] : -1;
-
-                            int numOfEmittedTokens = EmitToken(token, nextToken, emittedTokens, onTokenDecoded);
-
-                            for (int i = 0; i < numOfEmittedTokens && !tokensEmitQueue.empty(); i++)
-                            {
-                                tokensHistory.push_back(tokensEmitQueue.front());
-                                tokensEmitQueue.pop_front();
-                            }
+                            emittedTokens += EmitTokens(tokensEmitQueue, tokensHistory, onTokenDecoded);
                         }
                     }
 
@@ -253,15 +233,9 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
         {
             if (!tokensEmitQueue.empty())
             {
-                int64_t token;
-                int64_t nextToken;
-
-                for (size_t i = 0; i < tokensEmitQueue.size();)
+                while (!tokensEmitQueue.empty())
                 {
-                    token = tokensEmitQueue[i];
-                    nextToken = (i + 1 < tokensEmitQueue.size()) ? tokensEmitQueue[i + 1] : -1;
-
-                    i += EmitToken(token, nextToken, emittedTokens, onTokenDecoded);
+                    EmitTokens(tokensEmitQueue, tokensHistory, onTokenDecoded);
                 }
             }
 
@@ -286,6 +260,15 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
                     std::cout << "Failed to acquire a GPU within the waiting time of: " << ConfigManager::HttpMaxQueueWaitSeconds << std::endl;
             }
         }
+
+        if (!undecodedJunk.empty())
+        {
+            std::cout << std::endl
+                      << undecodedJunk << std::endl
+                      << std::flush;
+
+            undecodedJunk.clear();
+        }
     }
     else
         generationResult.Error = GenerationError::InvalidPrompt;
@@ -295,7 +278,7 @@ GenerationResult ChatSession::Generate(std::string &openaiJson, std::function<vo
 
 bool ChatSession::FormatInput(const std::string &openaiJson)
 {
-    std::string fullText;
+    std::ostringstream fullText;
     _Tokens.clear();
     _EosPerPrompt.clear();
 
@@ -402,7 +385,7 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
                 {
                     userMessage = message["content"];
 
-                    fullText += ChatTemplateProvider::Format(userMessage, messageIndex == 0);
+                    fullText << ChatTemplateProvider::Format(userMessage, messageIndex == 0);
 
                     auto userTokens = Tokenizer::EncodeWithChatTemplate(userMessage, messageIndex == 0);
                     _Tokens.insert(_Tokens.end(), userTokens.begin(), userTokens.end());
@@ -413,7 +396,7 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
 
                     if (!assistantMessage.empty())
                     {
-                        fullText += assistantMessage;
+                        fullText << assistantMessage;
 
                         auto assistantTokens = Tokenizer::EncodeWithoutChatTemplate(assistantMessage);
                         _Tokens.insert(_Tokens.end(), assistantTokens.begin(), assistantTokens.end());
@@ -426,7 +409,7 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
                             std::string eosString = ChatTemplateProvider::GetEOSTokenString();
                             auto eosIds = Tokenizer::EncodeWithoutChatTemplate(eosString);
 
-                            fullText += eosString;
+                            fullText << eosString;
 
                             _Tokens.insert(_Tokens.end(), eosIds.begin(), eosIds.end());
                         }
@@ -461,6 +444,23 @@ bool ChatSession::FormatInput(const std::string &openaiJson)
             isValid = false;
             std::cout << "Invalid OpenAI request: input produced zero tokens, Ensure at least one user message with non-empty content...";
         }
+    }
+
+    if (isValid && !ConfigManager::IsThinkingEnabled.value())
+    {
+        auto thinkString = ChatTemplateProvider::GetThinkString();
+        if (!thinkString.empty())
+        {
+            fullText << thinkString;
+            auto encodedThinkString = Tokenizer::EncodeWithoutChatTemplate(thinkString);
+            _Tokens.insert(_Tokens.end(), encodedThinkString.begin(), encodedThinkString.end());
+        }
+    }
+
+    if (ConfigManager::isPrintChatTemplateOutput.value())
+    {
+        std::cout << std::endl
+                  << fullText.str() << std::endl;
     }
 
     return isValid;
@@ -515,41 +515,46 @@ bool ChatSession::IsRepeatDetected(std::deque<int64_t> &tokensEmitQueue, const s
     return isLoop;
 }
 
-int ChatSession::EmitToken(const int64_t &tokenID, const int64_t &nextTokenID, int &emittedTokensCount, const std::function<void(const std::string &)> &onTokenDecoded)
+int ChatSession::EmitTokens(std::deque<int64_t> &tokensEmitQueue, std::vector<int64_t> &tokensHistory, const std::function<void(const std::string &)> &onTokenDecoded)
 {
-    bool isValidDecodedOutput = true;
-    int numOfEmittedTokens = 1;
+    int emittedTokens = 0;
+    std::string buffer;
+    int tokensQueueSize = tokensEmitQueue.size();
 
-    auto decoded = Tokenizer::Decode(tokenID);
-
-    if (!IsValidUTF8(decoded))
+    for (int i = 0; i < tokensQueueSize; i++)
     {
-        if (nextTokenID != -1)
+        auto tokenId = tokensEmitQueue.front();
+        tokensHistory.push_back(tokenId);
+
+        buffer += Tokenizer::Decode(tokenId);
+        tokensEmitQueue.pop_front();
+        emittedTokens++;
+
+        if (IsValidUTF8(buffer))
         {
-            auto nextDecoded = Tokenizer::Decode(nextTokenID);
+            buffer = std::regex_replace(buffer, _NewLineRegex, "\n");
+            buffer = std::regex_replace(buffer, _NewLineRegex2, "\n");
 
-            decoded += nextDecoded;
+            break;
         }
+        else
+        {
+            if (buffer.size() > 4)
+            {
+                undecodedJunk += buffer + "\n";
+                buffer = "�";
 
-        isValidDecodedOutput = IsValidUTF8(decoded);
-
-        if (isValidDecodedOutput)
-            numOfEmittedTokens += 1;
+                break;
+            }
+        }
     }
 
-    if (!isValidDecodedOutput)
-        decoded = "�";
-    else
-    {
-        decoded = std::regex_replace(decoded, _NewLineRegex, "\n");
-        decoded = std::regex_replace(decoded, _NewLineRegex2, "\n");
-    }
+    if (!buffer.empty())
+        onTokenDecoded(buffer);
+        
+    buffer.clear();
 
-    onTokenDecoded(decoded);
-
-    emittedTokensCount += numOfEmittedTokens;
-
-    return numOfEmittedTokens;
+    return emittedTokens;
 }
 
 int64_t ChatSession::Sample(torch::Tensor &lastLogitsToken, bool isGreedy)

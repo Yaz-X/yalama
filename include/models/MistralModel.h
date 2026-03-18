@@ -1,8 +1,8 @@
 #pragma once
 
-#include "LlamaModel.h"
+#include "ModelBase.h"
 
-class MistralModel : public LlamaModel
+class MistralModel : public ModelBase
 {
 public:
     MistralModel();

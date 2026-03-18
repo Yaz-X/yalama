@@ -161,14 +161,27 @@ void ModelBase::Load()
     _QWeightKeys.resize(ConfigManager::NumLayers);
     _KWeightKeys.resize(ConfigManager::NumLayers);
     _VWeightKeys.resize(ConfigManager::NumLayers);
-    _QBiasWeightKeys.resize(ConfigManager::NumLayers);
-    _KBiasWeightKeys.resize(ConfigManager::NumLayers);
-    _VBiasWeightKeys.resize(ConfigManager::NumLayers);
+
+    if (_WeightNames.find(WeightType::BiasQ) != _WeightNames.end())
+        _QBiasWeightKeys.resize(ConfigManager::NumLayers);
+
+    if (_WeightNames.find(WeightType::BiasK) != _WeightNames.end())
+        _KBiasWeightKeys.resize(ConfigManager::NumLayers);
+
+    if (_WeightNames.find(WeightType::BiasV) != _WeightNames.end())
+        _VBiasWeightKeys.resize(ConfigManager::NumLayers);
+
+    if (_WeightNames.find(WeightType::QNormWeight) != _WeightNames.end())
+        _QNormWeights.resize(ConfigManager::NumLayers);
+
+    if (_WeightNames.find(WeightType::KNormWeight) != _WeightNames.end())
+        _KNormWeights.resize(ConfigManager::NumLayers);
+
     _WoWeightKeys.resize(ConfigManager::NumLayers);
     _Wgate.resize(ConfigManager::NumLayers);
     _WUp.resize(ConfigManager::NumLayers);
     _Wdown.resize(ConfigManager::NumLayers);
-    
+
     for (int i = 0; i < ConfigManager::NumLayers; i++)
     {
         _RMSNormPreAttentionWeightKeys[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::PreAttentionNorm), i));
@@ -193,6 +206,12 @@ void ModelBase::Load()
         if (_WeightNames.find(WeightType::BiasV) != _WeightNames.end())
             _VBiasWeightKeys[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::BiasV), i));
 
+        if (_WeightNames.find(WeightType::QNormWeight) != _WeightNames.end())
+            _QNormWeights[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::QNormWeight), i));
+
+        if (_WeightNames.find(WeightType::KNormWeight) != _WeightNames.end())
+            _KNormWeights[i] = &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::KNormWeight), i));
+
         _WoWeightKeys[i] =
             &_Weights.at(FormatWeightNameForLoading(_WeightNames.at(WeightType::OProj), i));
 
@@ -215,6 +234,22 @@ void ModelBase::Load()
     torch::globalContext().setSDPUseMath(false);
 
     torch::NoGradGuard no_grad;
+}
+
+void ModelBase::PopulateWeightNames()
+{
+    _WeightNames[WeightType::Embedding] = "model.embed_tokens.weight";
+    _WeightNames[WeightType::PreAttentionNorm] = "model.layers.%d.input_layernorm.weight";
+    _WeightNames[WeightType::QProj] = "model.layers.%d.self_attn.q_proj.weight";
+    _WeightNames[WeightType::KProj] = "model.layers.%d.self_attn.k_proj.weight";
+    _WeightNames[WeightType::VProj] = "model.layers.%d.self_attn.v_proj.weight";
+    _WeightNames[WeightType::OProj] = "model.layers.%d.self_attn.o_proj.weight";
+    _WeightNames[WeightType::PostAttentionNorm] = "model.layers.%d.post_attention_layernorm.weight";
+    _WeightNames[WeightType::GateProj] = "model.layers.%d.mlp.gate_proj.weight";
+    _WeightNames[WeightType::UpProj] = "model.layers.%d.mlp.up_proj.weight";
+    _WeightNames[WeightType::DownProj] = "model.layers.%d.mlp.down_proj.weight";
+    _WeightNames[WeightType::FinalNorm] = "model.norm.weight";
+    _WeightNames[WeightType::LMHead] = "lm_head.weight";
 }
 
 bool ModelBase::IsLoadWeight(const std::string &name)
@@ -311,7 +346,7 @@ void ModelBase::InitKVCache()
 
         int B = 1;
         int H = ConfigManager::NumKVHeads;
-        int D = ConfigManager::HiddenSize / ConfigManager::NumHeads;
+        int D = ConfigManager::HeadDim;
 
         size_t bytes_per_token =
             B * H * D * sizeof(torch::BFloat16);
@@ -490,6 +525,10 @@ AttentionCalculationResult ModelBase::CalculateInferenceAttention(const torch::T
     v = v.view({v.size(0), v.size(1), ConfigManager::NumKVHeads, ConfigManager::HeadDim})
             .transpose(1, 2);
 
+    q = CalculatePostProjectionQ(q, layer);
+    k = CalculatePostProjectionK(k, layer);
+    v = CalculatePostProjectionV(v, layer);
+
     TraceLogger::Dump("q_t", q, TraceLogger::_TraceStep);
     TraceLogger::Dump("k_t", k, TraceLogger::_TraceStep);
     TraceLogger::Dump("v_t", v, TraceLogger::_TraceStep);
@@ -558,8 +597,8 @@ AttentionCalculationResult ModelBase::CalculateInferenceAttention(const torch::T
         TraceLogger::Dump("k_exp", k, TraceLogger::_TraceStep);
         TraceLogger::Dump("v_exp", v, TraceLogger::_TraceStep);
 
-        // TORCH_CHECKER(k.size(1) == ConfigManager::NumHeads);
-        // TORCH_CHECKER(v.size(1) == ConfigManager::NumHeads);
+        TORCH_CHECKER(k.size(1) == ConfigManager::NumHeads);
+        TORCH_CHECKER(v.size(1) == ConfigManager::NumHeads);
 
         auto B = q.size(0);
         auto Hq = q.size(1);
@@ -567,10 +606,14 @@ AttentionCalculationResult ModelBase::CalculateInferenceAttention(const torch::T
 
         auto Hkv = k.size(1);
 
-        //  TORCH_CHECKER(Hq == ConfigManager::NumHeads);
-        //  TORCH_CHECKER(Hkv == ConfigManager::NumHeads);
-        //  TORCH_CHECKER(k.size(0) == B && k.size(3) == D);
-        //  TORCH_CHECKER(v.size(0) == B && v.size(3) == D);
+        TORCH_CHECKER(Hq == ConfigManager::NumHeads);
+        TORCH_CHECKER(Hkv == ConfigManager::NumHeads);
+
+        TORCH_CHECKER(k.size(0) == B);
+        TORCH_CHECKER(v.size(0) == B);
+
+        TORCH_CHECKER(k.size(3) == D);
+        TORCH_CHECKER(v.size(3) == D);
 
         torch::Tensor mask;
 
@@ -608,6 +651,21 @@ AttentionCalculationResult ModelBase::CalculateInferenceAttention(const torch::T
     }
 
     return result;
+}
+
+torch::Tensor ModelBase::CalculatePostProjectionQ(const torch::Tensor &q, int layer)
+{
+    return q;
+}
+
+torch::Tensor ModelBase::CalculatePostProjectionK(const torch::Tensor &k, int layer)
+{
+    return k;
+}
+
+torch::Tensor ModelBase::CalculatePostProjectionV(const torch::Tensor &v, int layer)
+{
+    return v;
 }
 
 torch::Tensor ModelBase::ApplyScaledDotProductAttention(torch::Tensor &q, torch::Tensor &k, torch::Tensor &v, torch::Tensor &mask)
@@ -697,22 +755,29 @@ torch::Tensor ModelBase::CalculateFFN(const torch::Tensor &x, int layer)
 torch::Tensor ModelBase::CalculateProjectionQ(const torch::Tensor &x, int layer)
 {
     TORCH_CHECKER(_QWeightKeys[layer]->dim() == 2);
-    TORCH_CHECKER(_QWeightKeys[layer]->size(0) == x.size(-1));
 
     auto &W = *_QWeightKeys[layer];
+
+    TORCH_CHECKER(W.size(1) == x.size(-1));
+
     return torch::matmul(x, W.t());
 }
 
 torch::Tensor ModelBase::CalculateProjectionK(const torch::Tensor &x, int layer)
 {
-
     auto &W = *_KWeightKeys[layer];
+
+    TORCH_CHECKER(W.size(1) == x.size(-1));
+
     return torch::matmul(x, W.t());
 }
 
 torch::Tensor ModelBase::CalculateProjectionV(const torch::Tensor &x, int layer)
 {
     auto &W = *_VWeightKeys[layer];
+
+    TORCH_CHECKER(W.size(1) == x.size(-1));
+
     return torch::matmul(x, W.t());
 }
 
@@ -768,7 +833,7 @@ torch::Tensor ModelBase::MergeHeadsAttentionOut(const torch::Tensor &attentionOu
 
 torch::Tensor ModelBase::MultiplyWithWo(const torch::Tensor &mergedAttentionOut, int layer)
 {
-    TORCH_CHECKER(_WoWeightKeys[layer]->size(0) == mergedAttentionOut.size(-1));
+    TORCH_CHECKER(_WoWeightKeys[layer]->size(1) == mergedAttentionOut.size(-1));
 
     return torch::matmul(mergedAttentionOut, _WoWeightKeys[layer]->t());
 }

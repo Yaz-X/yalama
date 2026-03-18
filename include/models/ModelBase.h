@@ -20,7 +20,6 @@ public:
     virtual void Load();
 
 protected:
-    
     bool _IsInferReady = false;
     int _LastKVCacheTokenIndex = 0;
     int _KVCapacityInTokens;
@@ -40,6 +39,9 @@ protected:
     std::vector<const torch::Tensor *> _KBiasWeightKeys;
     std::vector<const torch::Tensor *> _VBiasWeightKeys;
 
+    std::vector<const torch::Tensor *> _QNormWeights;
+    std::vector<const torch::Tensor *> _KNormWeights;
+
     std::vector<const torch::Tensor *> _WoWeightKeys;
     std::vector<const torch::Tensor *> _Wgate;
     std::vector<const torch::Tensor *> _WUp;
@@ -49,7 +51,7 @@ protected:
     const torch::Tensor *_LMHeadWeight;
     const torch::Tensor *_FinalRMSNormWeight;
 
-    virtual void PopulateWeightNames() = 0;
+    virtual void PopulateWeightNames();
     virtual void BuildRopeCache();
 
     virtual bool IsLoadWeight(const std::string &name);
@@ -68,6 +70,11 @@ protected:
     virtual torch::Tensor CalculateProjectionQ(const torch::Tensor &x, int layer);
     virtual torch::Tensor CalculateProjectionK(const torch::Tensor &x, int layer);
     virtual torch::Tensor CalculateProjectionV(const torch::Tensor &x, int layer);
+
+    virtual torch::Tensor CalculatePostProjectionQ(const torch::Tensor &q, int layer);
+    virtual torch::Tensor CalculatePostProjectionK(const torch::Tensor &k, int layer);
+    virtual torch::Tensor CalculatePostProjectionV(const torch::Tensor &v, int layer);
+
     virtual torch::Tensor ApplyInferencingRope(const torch::Tensor &x, int start_pos, std::string name);
     virtual torch::Tensor MergeHeadsAttentionOut(const torch::Tensor &attentionOut);
     virtual torch::Tensor MultiplyWithWo(const torch::Tensor &mergedAttentionOut, int layer);

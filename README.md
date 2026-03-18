@@ -1,6 +1,6 @@
 # YALAMA
 
-## **Production-grade Native C++ LLaMA/Mistral/Qwen2.5 Text Based Models Runtime**
+## **Production-grade Native C++ LLaMA/Mistral/Qwen2.5/Qwen3 Text Based Models Runtime**
 
 Deterministic high-performance **LibTorch inference runtime** built entirely in C++.
 
@@ -33,6 +33,8 @@ Deterministic high-performance **LibTorch inference runtime** built entirely in 
 - Mistral 7B Instruct v0.3
 - Qwen 2.5 1.5B Instruct
 - Qwen 2.5 7B Instruct
+- Qwen3 0.6B
+- Qwen3 4B Instruct-2507
 
 Larger models (e.g. **70B**) are expected to work but were not tested due to hardware limits.
 
@@ -154,23 +156,25 @@ Runs an **interactive terminal session**.
 
 `--model` is the **only required argument**.
 
-|           Argument            |                              Description                                    |
-|-------------------------------|-----------------------------------------------------------------------------|
-| `--model`                     | **Required**. Path to HuggingFace SafeTensors model                         |
-| `--config`                    | Folder containing `yalama_config.json`                                      |
-| `--logs`                      | Log directory (used when debug is enabled). Default: current folder         |
-| `--serviceMode`               | `1 = Service`, `0 = REPL`                                                   |
-| `--httpThreadsPoolSize`       | `valid values from 4 to 64, only used in services mode`                     |
-| `--port`                      | Service port (default `5067`)                                               |
-| `--isServiceLoggingEnabled`   | Prints logging messages on terminal for services (default `false`)          |
-| `--debug`                     |  `1 = enable`, `0 = disable`. Logs tensors per layer (performance impact)   |
-| `--istorchvalidationsenabled` | `1 = enable`, `0 = disable`. Enables internal torch validations             |
-| `--iskvcacheenabled`          | `1 = enable`, `0 = disable`. Default enabled                                |
-| `--kvcachesizeingb`           | Minimum `1GB`, default `2GB`                                                |
-| `--isgreedy`                  | `1 = enable`, `0 = disable`. Default enabled                                |
-| `--topk`                      | `2–40`, default `40`. Ignored if greedy is enabled                          |
-| `--temp`                      | `0.05–0.7`, default `0.6`. Ignored if greedy is enabled                     |
-| `--showloadedweights`         | `1 = enable`, `0 = disable`. Shows weight names during loading              |
+|           Argument            |                              Description                                                                        |
+|-------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| `--model`                     | **Required**. Path to HuggingFace SafeTensors model                                                             |
+| `--config`                    | Folder containing `yalama_config.json`                                                                          |
+| `--logs`                      | Log directory (used when debug is enabled). Default: current folder                                             |
+| `--serviceMode`               | `1 = Service`, `0 = REPL`                                                                                       |
+| `--httpThreadsPoolSize`       | `valid values from 4 to 64, only used in services mode`                                                         |
+| `--port`                      | Service port (default `5067`)                                                                                   |
+| `--isServiceLoggingEnabled`   | Prints logging messages on terminal for services (default `false`)                                              |
+| `--debug`                     |  `1 = enable`, `0 = disable`. Logs tensors per layer (performance impact)                                       |
+| `--istorchvalidationsenabled` | `1 = enable`, `0 = disable`. Enables internal torch validations                                                 |
+| `--iskvcacheenabled`          | `1 = enable`, `0 = disable`. Default enabled                                                                    |
+| `--kvcachesizeingb`           | Minimum `1GB`, default `2GB`                                                                                    |
+| `--isgreedy`                  | `1 = enable`, `0 = disable`. Default enabled                                                                    |
+| `--topk`                      | `2–40`, default `40`. Ignored if greedy is enabled                                                              |
+| `--temp`                      | `0.05–0.7`, default `0.6`. Ignored if greedy is enabled                                                         |
+| `--showloadedweights`         | `1 = enable`, `0 = disable`. Shows weight names during loading                                                  |
+| `--isThinkingEnabled`         | `1 = enable`, `0 = disable`. enables/disables think for models that support it, Default Disabled                |
+| `--isPrintChatTemplateOutput` | `1 = enable`, `0 = disable`. prints chat template output before model reply, only valid for REPL mode           |
 
 **NOTE: logs arg is path of the folder where the log file is written, the log file is huge and logs tensors in each step in each layer, and have a high performance
 impace.**
@@ -182,6 +186,8 @@ impace.**
 1. **CLI arguments** override everything
 2. `yalama_config.json` fills missing values
 3. **Defaults** applied last
+
+**NOTE**: CLI args are **NOT** case-senesitive, but keys in yalama_json.cofig **ARE** case-sensitive
 
 Important:
 
@@ -207,7 +213,9 @@ Important:
   "kvCacheSizeInGB": 2,
   "isGreedy": false,
   "topk": 40,
-  "temp": 0.6
+  "temp": 0.6,
+  "isThinkingEnabled": false,
+  "isPrintChatTemplateOutput": false
 }
 ```
 
@@ -218,22 +226,23 @@ Missing fields fall back to defaults.
 
 If no configuration is provided, the following defaults are used:
 
-| Setting                     | Default Value | Notes                                                                             |
-|-----------------------------|---------------|-----------------------------------------------------------------------------------|
-| `debug`                     | `false`       | Debug logging disabled                                                            |
-| `logs`                      | `./`          | Current directory, only active when debug is true                                 |
-| `serviceMode`               | `true`        | OpenAI Compatible Service                                                         |
-| `httpThreadsPoolSize`       | `32`          | Service Thread Pool size (ignored in REPL mode)                                   |
-| `showloadedweights`         | `false`       | Show the names of loaded weights while loading                                    |
-| `port`                      | `5067`        | OpenAI Compatible Service server port (ignored in REPL mode)                      |
-| `isServiceLoggingEnabled`   | `false`       | print logs on terminal for service operations                                     |
-|                             |               | status codes(i.e incoming request and response)                                   |
-| `isTorchValidationsEnabled` | `false`       | Torch validations disabled                                                        |
-| `isKVCacheEnabled`          | `true`        | KV cache enabled                                                                  |
-| `kvCacheSizeInGB`           | `2`           | Minimum allowed: 1GB                                                              |
-| `isGreedy`                  | `true`        | Greedy decoding enabled                                                           |
-| `topk`                      | `40`          | Ignored if greedy enabled                                                         |
-| `temp`                      | `0.6`         | Ignored if greedy enabled                                                         |
+| Setting                       | Default Value | Notes                                                                                             |
+|-------------------------------|---------------|---------------------------------------------------------------------------------------------------|
+| `debug`                       | `false`       | Debug logging disabled                                                                            |
+| `logs`                        | `./`          | Current directory, only active when debug is true                                                 |
+| `serviceMode`                 | `true`        | OpenAI Compatible Service                                                                         |
+| `httpThreadsPoolSize`         | `32`          | Service Thread Pool size (ignored in REPL mode)                                                   |
+| `showloadedweights`           | `false`       | Show the names of loaded weights while loading                                                    |
+| `port`                        | `5067`        | OpenAI Compatible Service server port (ignored in REPL mode)                                      |
+| `isServiceLoggingEnabled`     | `false`       | print logs on terminal for service operations, status codes(i.e incoming request and response)    |
+| `isTorchValidationsEnabled`   | `false`       | Torch validations disabled                                                                        |
+| `isKVCacheEnabled`            | `true`        | KV cache enabled                                                                                  |
+| `kvCacheSizeInGB`             | `2`           | Minimum allowed: 1GB                                                                              |
+| `isGreedy`                    | `true`        | Greedy decoding enabled                                                                           |
+| `topk`                        | `40`          | Ignored if greedy enabled                                                                         |
+| `temp`                        | `0.6`         | Ignored if greedy enabled                                                                         |
+| `isThinkingEnabled`           | `false`       | disables think for models that support it                                                         |
+| `isPrintChatTemplateOutput`   | `false`       | doesnt print chat template output before model reply, only valid for REPL mode                    |
 
 ## Docker
 
@@ -309,7 +318,9 @@ yalama:linux \
 --isgreedy 1 \
 --topk 40 \
 --temp 0.6 \
---showloadedweights 0
+--showloadedweights 0 \
+--isThinkingEnabled 0 \
+--isPrintChatTemplateOutput 0
 ```
 
 Container supports the **same CLI arguments as native execution**.

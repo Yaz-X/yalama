@@ -340,6 +340,62 @@ std::string ParseArgs(int argsCount, char **args)
 
             i++;
         }
+        else if (arg == "--isthinkingenabled" && i + 1 < argsCount)
+        {
+            try
+            {
+                std::string value = Trim(args[i + 1]);
+                std::ostringstream loadedMsg;
+                loadedMsg << "Is Thinking Enabled supplied: " << value << std::endl;
+
+                if (value == "1")
+                {
+                    ConfigManager::IsThinkingEnabled = true;
+                    std::cout << loadedMsg.str();
+                }
+                else if (value == "0")
+                {
+                    ConfigManager::IsThinkingEnabled = false;
+                    std::cout << loadedMsg.str();
+                }
+                else
+                    std::cout << "invalid value supplied for --isthinkingenabled arg, will use default as 1 (true)" << std::endl;
+            }
+            catch (...)
+            {
+                std::cout << "Invalid value supplied for arg --isthinkingenabled, will use default as 1 (true)" << std::endl;
+            }
+
+            i++;
+        }
+        else if (arg == "--isprintchattemplateoutput" && i + 1 < argsCount)
+        {
+            try
+            {
+                std::string value = Trim(args[i + 1]);
+                std::ostringstream loadedMsg;
+                loadedMsg << "Is Print Chat Template Output supplied: " << value << std::endl;
+
+                if (value == "1")
+                {
+                    ConfigManager::isPrintChatTemplateOutput = true;
+                    std::cout << loadedMsg.str();
+                }
+                else if (value == "0")
+                {
+                    ConfigManager::isPrintChatTemplateOutput = false;
+                    std::cout << loadedMsg.str();
+                }
+                else
+                    std::cout << "invalid value supplied for --isPrintChatTemplateOutput arg, will use default as 1 (true)" << std::endl;
+            }
+            catch (...)
+            {
+                std::cout << "Invalid value supplied for arg --isPrintChatTemplateOutput, will use default as 1 (true)" << std::endl;
+            }
+
+            i++;
+        }
     }
 
     return configFolderPath;
@@ -389,8 +445,10 @@ int main(int argsCount, char **args)
         std::cout << "TopK: " << ConfigManager::TopK << std::endl;
         std::cout << "Temperature: " << ConfigManager::Temp << std::endl;
     }
-    
+
     std::cout << "Show Loaded Weights: " << (ConfigManager::IsShowLoadedWeights.value() ? "true" : "false") << std::endl;
+    std::cout << "Enabled Thinking: " << (ConfigManager::IsThinkingEnabled.value() ? "true" : "false") << std::endl;
+
     std::cout << "==================================================" << std::endl
               << std::endl;
 
@@ -440,7 +498,16 @@ int main(int argsCount, char **args)
             while (!end)
             {
                 if (!assistantResponse.empty())
+                {
+                    while (!assistantResponse.empty() && assistantResponse.front() == '\n')
+                    {
+                        assistantResponse.erase(assistantResponse.begin());
+                    }
+
+                    //  assistantResponse.insert(assistantResponse.begin(), '\n');
+
                     messages.push_back({{"role", "assistant"}, {"content", assistantResponse}});
+                }
 
                 assistantResponse.clear();
                 std::string input;
@@ -462,10 +529,20 @@ int main(int argsCount, char **args)
                     request["messages"] = messages;
 
                     std::string requestStr = request.dump();
+                    bool isThinkDetected = false;
+                    bool isSaveToken = true;
 
                     session.Generate(requestStr, [&](const std::string &token)
                                      { 
-                            assistantResponse += token;
+                                
+                            if(TrimToLower(token) == "<think>")
+                                isThinkDetected = true;
+                            else if(TrimToLower(token) == "</think>")
+                                isThinkDetected = false;
+                            
+                            if(!isThinkDetected && TrimToLower(token) != "<think>" && TrimToLower(token) != "</think>")
+                                assistantResponse += token;
+
                             std::cout << token << std::flush; }, isCancel);
 
                     std::cout << std::endl;
