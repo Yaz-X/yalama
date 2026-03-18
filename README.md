@@ -156,25 +156,25 @@ Runs an **interactive terminal session**.
 
 `--model` is the **only required argument**.
 
-|           Argument            |                              Description                                                                        |
-|-------------------------------|-----------------------------------------------------------------------------------------------------------------|
-| `--model`                     | **Required**. Path to HuggingFace SafeTensors model                                                             |
-| `--config`                    | Folder containing `yalama_config.json`                                                                          |
-| `--logs`                      | Log directory (used when debug is enabled). Default: current folder                                             |
-| `--serviceMode`               | `1 = Service`, `0 = REPL`                                                                                       |
-| `--httpThreadsPoolSize`       | `valid values from 4 to 64, only used in services mode`                                                         |
-| `--port`                      | Service port (default `5067`)                                                                                   |
-| `--isServiceLoggingEnabled`   | Prints logging messages on terminal for services (default `false`)                                              |
-| `--debug`                     |  `1 = enable`, `0 = disable`. Logs tensors per layer (performance impact)                                       |
-| `--istorchvalidationsenabled` | `1 = enable`, `0 = disable`. Enables internal torch validations                                                 |
-| `--iskvcacheenabled`          | `1 = enable`, `0 = disable`. Default enabled                                                                    |
-| `--kvcachesizeingb`           | Minimum `1GB`, default `2GB`                                                                                    |
-| `--isgreedy`                  | `1 = enable`, `0 = disable`. Default enabled                                                                    |
-| `--topk`                      | `2–40`, default `40`. Ignored if greedy is enabled                                                              |
-| `--temp`                      | `0.05–0.7`, default `0.6`. Ignored if greedy is enabled                                                         |
-| `--showloadedweights`         | `1 = enable`, `0 = disable`. Shows weight names during loading                                                  |
-| `--isThinkingEnabled`         | `1 = enable`, `0 = disable`. enables/disables think for models that support it, Default Disabled                |
-| `--isPrintChatTemplateOutput` | `1 = enable`, `0 = disable`. prints chat template output before model reply                                     |
+|           Argument                    |                              Description                                                                        |
+|---------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| `--model`                             | **Required**. Path to HuggingFace SafeTensors model                                                             |
+| `--config`                            | Folder containing `yalama_config.json`                                                                          |
+| `--logs`                              | Log directory (used when debug is enabled). Default: current folder                                             |
+| `--serviceMode`                       | `1 = Service`, `0 = REPL`                                                                                       |
+| `--httpThreadsPoolSize`               | `valid values from 4 to 64, only used in services mode`                                                         |
+| `--port`                              | Service port (default `5067`)                                                                                   |
+| `--isServiceLoggingEnabled`           | Prints logging messages on terminal for services (default `false`)                                              |
+| `--debug`                             |  `1 = enable`, `0 = disable`. Logs tensors per layer (performance impact)                                       |
+| `--istorchvalidationsenabled`         | `1 = enable`, `0 = disable`. Enables internal torch validations                                                 |
+| `--iskvcacheenabled`                  | `1 = enable`, `0 = disable`. Default enabled                                                                    |
+| `--kvcachesizeingb`                   | Minimum `1GB`, default `2GB`                                                                                    |
+| `--isgreedy`                          | `1 = enable`, `0 = disable`. Default enabled                                                                    |
+| `--topk`                              | `2–40`, default `40`. Ignored if greedy is enabled                                                              |
+| `--temp`                              | `0.05–0.7`, default `0.6`. Ignored if greedy is enabled                                                         |
+| `--showloadedweights`                 | `1 = enable`, `0 = disable`. Shows weight names during loading                                                  |
+| `--isThinkingEnabled`                 | `1 = enable`, `0 = disable`. enables/disables think for models that support it, Default Disabled                |
+| `--isPrintChatTemplateOutput`         | `1 = enable`, `0 = disable`. prints chat template output before model reply                                     |
 
 **NOTE: logs arg is path of the folder where the log file is written, the log file is huge and logs tensors in each step in each layer, and have a high performance
 impace.**
