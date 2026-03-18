@@ -406,5 +406,6 @@ See the `LICENSE` file in the project root.
 
 YALAMA **does not distribute model weights**.
 
-LLaMA models are licensed separately under the **Meta Llama License**.  
-Users are responsible for complying with the model license terms.
+Model weights and architectures (e.g., LLaMA, Mistral, Qwen) are not included and are subject to their respective licenses provided by their authors.
+
+Users are solely responsible for ensuring compliance with the applicable model licenses when using this runtime.
