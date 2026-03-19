@@ -266,7 +266,7 @@ docker run -it --gpus all \
 ghcr.io/yaz-x/yalama:latest /app/yalama --model /model
 ```
 
-or you can build images from source described in the next section as YALAMA provides Dockerfiles for both **native Linux** and **WSL environments**.
+or you can build images from source described in the next section as YALAMA provides a Dockerfile that runs on both **native Linux** and **WSL environments**.
 
 ### Build Image
 
@@ -289,7 +289,7 @@ docker run -it --gpus all \
 --rm --name yalama \
 -p 5067:5067 \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/model \
-yalama:latest /app/yalama --model /model
+yalama /app/yalama --model /model
 ```
 
 ---
@@ -303,7 +303,7 @@ docker run -it --gpus all \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/model \
 -v ~/yalama_config:/config \
 -v ~/yalama_logs:/logs \
-yalama:linux \
+yalama /app/yalama \
 --model /model \
 --serviceMode 1 \
 --port 8080 \
@@ -331,7 +331,7 @@ Container supports the **same CLI arguments as native execution**.
 docker run -it --gpus all \
 --rm --name yalama \
 -v ~/.cache/huggingface/hub/models--meta-llama--Llama-3.2-3B-Instruct:/models \
-yalama:linux --model /models --serviceMode 0
+yalama /app/yalama --model /models --serviceMode 0
 ```
 
 ## Native Execution
