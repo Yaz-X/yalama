@@ -61,6 +61,9 @@ Supported architectures:
 
 - LLaMA 3.x Base
 - LLaMA 3.x Instruct
+- Mistral 0.3
+- Qwen 2.5
+- Qwen 3.0
 
 The runtime expects a HuggingFace model repository structure containing:
 
