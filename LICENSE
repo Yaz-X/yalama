@@ -1,23 +1,90 @@
-Apache License
-Version 2.0, January 2004
-https://www.apache.org/licenses/
+YALAMA COMMUNITY LICENSE
+Version 1.0
 
-Copyright 2026 Yazeed Hamdan
+Copyright (c) 2026 Yazeed Hamdan
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+1. GRANT OF RIGHTS
 
-https://www.apache.org/licenses/LICENSE-2.0
+Subject to the terms of this License, the copyright holder grants you a worldwide, royalty-free, non-exclusive license to use, copy, modify, and distribute the YALAMA software and its source code for:
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+* Personal use;
+* Educational use;
+* Academic and research use;
+* Non-commercial use; and
+* Independent/indie development, subject to the limitations in Section 2.
 
-This project does NOT distribute model weights.
+You may create derivative works based on YALAMA for the permitted uses above.
 
-Model weights and architectures (e.g., LLaMA, Mistral, Qwen) are not included and are subject to their respective licenses provided by their authors.
+2. INDIE USE
 
-Users are solely responsible for ensuring compliance with the applicable model licenses when using this runtime.
+An individual or independent development team may use YALAMA without purchasing a commercial license provided that:
+
+* The use is not performed on behalf of a company, corporation, government entity, or other commercial organization;
+* The resulting product or service is independently developed and operated; and
+* The annual gross revenue directly attributable to the product or service using YALAMA does not exceed USD $50,000.
+
+Once these conditions are no longer satisfied, continued use of YALAMA requires a valid Commercial License.
+
+3. COMMERCIAL USE
+
+Use of YALAMA by a company, corporation, enterprise, organization, or other commercial entity requires a separate commercial license from the copyright holder.
+
+Commercial use includes, but is not limited to:
+
+* Integrating YALAMA into a commercial product or service;
+* Using YALAMA to provide paid services;
+* Using YALAMA internally for commercial business operations;
+* Distributing software containing YALAMA as part of a commercial offering; or
+* Using YALAMA on behalf of a commercial organization.
+
+4. REDISTRIBUTION
+
+You may redistribute YALAMA under this License for permitted non-commercial and indie uses, provided that:
+
+* This License is included with the distribution;
+* The original copyright notice is preserved; and
+* You do not remove or alter existing copyright or license notices.
+
+You may not redistribute YALAMA under terms that grant commercial users rights that are broader than those granted by this License.
+
+5. MODIFICATIONS
+
+You may modify the source code for permitted uses.
+
+Modified versions must retain the original copyright and license notices.
+
+6. RESTRICTIONS
+
+You may not:
+
+* Use YALAMA for commercial purposes without a valid Commercial License;
+* Remove copyright or license notices;
+* Represent YALAMA or derivative works as being authored by the copyright holder;
+* Use the YALAMA name or trademarks to imply endorsement without permission; or
+* Sublicense commercial rights to YALAMA without authorization from the copyright holder.
+
+7. NO WARRANTY
+
+YALAMA IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF YALAMA.
+
+8. COMMERCIAL LICENSE
+
+Commercial licenses are available from the copyright holder.
+
+Commercial licensing may grant additional rights, including commercial deployment, redistribution, internal organizational use, and other rights agreed upon by the parties.
+
+9. TERMINATION
+
+The rights granted under this License terminate automatically if you violate its terms.
+
+Upon termination, you must cease all use and distribution of YALAMA unless you obtain a valid license from the copyright holder.
+
+10. COPYRIGHT
+
+YALAMA and its original source code remain the copyrighted work of Yazeed Hamdan.
+
+This License does not transfer ownership of the software or intellectual property.
+
+END OF LICENSE
