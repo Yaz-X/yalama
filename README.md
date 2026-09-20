@@ -401,14 +401,12 @@ curl http://localhost:5067/v1/chat/completions \
 
 ## License
 
-**YALAMA Runtime**  
-Copyright © 2026 Yazeed Hamdan
+YALAMA is licensed under the **YALAMA Community License**.
 
-Licensed under the **Apache License, Version 2.0**.  
-See the `LICENSE` file in the project root.
+* **Individuals, hobbyists, researchers, and indie developers:** Free to use under the terms of the license.
+* **Companies, enterprises, and commercial organizations:** A commercial license is required.
 
-YALAMA **does not distribute model weights**.
+See the [`LICENSE`](LICENSE) file for the complete license terms.
 
-Model weights and architectures (e.g., LLaMA, Mistral, Qwen) are not included and are subject to their respective licenses provided by their authors.
+For commercial licensing, please contact the copyright holder.
 
-Users are solely responsible for ensuring compliance with the applicable model licenses when using this runtime.
